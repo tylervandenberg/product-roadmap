@@ -1,27 +1,19 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { loadFromNotion, updateTask, updateDependencies, updateLinkedPhase, createTask, deleteTask } from "./notion.js";
 
-const CATEGORIES = {
-  "Definition":                "#f59e0b",
-  "Design & Prototype":        "#3b82f6",
-  "Compliance & Verification": "#8b5cf6",
-  "Suppliers & Tooling":       "#10b981",
-  "Marketing":                 "#ec4899",
-  "Testing & Validation":      "#ef4444",
-  "Launch Readiness":          "#f97316",
-  "Product Launch":            "#06b6d4",
-  "Refine & Scale":            "#84cc16",
-  "Retrospective":             "#6b7280",
-};
+// ── Static constants (not phase-dependent) ────────────────────────────────────
 const PRIORITIES = { High:"#ef4444", Medium:"#f59e0b", Low:"#6b7280" };
 const STATUSES   = { "Not Started":"#374151", "In Progress":"#3b82f6", "Waiting / Blocked":"#f97316", "Done":"#10b981" };
 const MONTHS = ["March 2026","April 2026","May 2026","June 2026","July 2026","August 2026","September 2026"];
 const MONTH_STARTS = { "March 2026":new Date("2026-03-01"),"April 2026":new Date("2026-04-01"),"May 2026":new Date("2026-05-01"),"June 2026":new Date("2026-06-01"),"July 2026":new Date("2026-07-01"),"August 2026":new Date("2026-08-01"),"September 2026":new Date("2026-09-01") };
 const PROJECT_START = new Date("2026-03-01");
 const PROJECT_END   = new Date("2026-09-30");
+const FALLBACK_COLOR = "#6b7280";
 
 function pct(d) { return ((new Date(d)-PROJECT_START)/(PROJECT_END-PROJECT_START))*100; }
 function dateToMonth(d) { const x=new Date(d+"T12:00:00"); return x.toLocaleString("en-US",{month:"long"})+" "+x.getFullYear(); }
+function fmtDate(d) { if(!d) return ""; return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
+
 function useIsMobile() {
   const [v,setV]=useState(typeof window!=="undefined"?window.innerWidth<640:false);
   useEffect(()=>{ const h=()=>setV(window.innerWidth<640); window.addEventListener("resize",h); return()=>window.removeEventListener("resize",h); },[]);
@@ -47,9 +39,7 @@ function LoadingScreen({ error, onRetry }) {
             <div style={{ fontSize:"13px",fontWeight:"700",marginBottom:"8px" }}>Failed to load from Notion</div>
             {error}
           </div>
-          <button onClick={onRetry} style={{ padding:"8px 20px",borderRadius:"6px",border:"1px solid #3b3b6b",background:"#1a1a2e",color:"#a78bfa",cursor:"pointer",fontSize:"11px",fontFamily:"inherit" }}>
-            Retry
-          </button>
+          <button onClick={onRetry} style={{ padding:"8px 20px",borderRadius:"6px",border:"1px solid #3b3b6b",background:"#1a1a2e",color:"#a78bfa",cursor:"pointer",fontSize:"11px",fontFamily:"inherit" }}>Retry</button>
         </>
       ) : (
         <>
@@ -68,107 +58,88 @@ function LoadingScreen({ error, onRetry }) {
 
 // ── Main App ───────────────────────────────────────────────────────────────────
 export default function GanttApp() {
-  const [milestones,  setMilestones]  = useState([]);
-  const [phases,      setPhases]      = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [loadError,   setLoadError]   = useState(null);
-  const [saving,      setSaving]      = useState(false); // shows a subtle indicator
-  const [view,        setView]        = useState("gantt");
-  const [search,      setSearch]      = useState("");
-  const [filterPhase, setFilterPhase] = useState("All");
-  const [hoverIdDesktop, setHoverIdDesktop] = useState(null);
-  const [selectedId,  setSelectedId]  = useState(null);
-  const [selectedEdge,setSelectedEdge]= useState(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [milestones,   setMilestones]  = useState([]);
+  const [phases,       setPhases]      = useState([]);
+  const [categories,   setCategories]  = useState({}); // { phaseName: colorHex } — live from Notion
+  const [loading,      setLoading]     = useState(true);
+  const [loadError,    setLoadError]   = useState(null);
+  const [saving,       setSaving]      = useState(false);
+  const [view,         setView]        = useState("gantt");
+  const [search,       setSearch]      = useState("");
+  const [filterPhase,  setFilterPhase] = useState("All");
+  const [hoverIdDesktop,setHoverIdDesktop] = useState(null);
+  const [selectedId,   setSelectedId]  = useState(null);
+  const [selectedEdge, setSelectedEdge]= useState(null);
+  const [showFilters,  setShowFilters] = useState(false);
   const isMobile = useIsMobile();
 
-  // ── Load from Notion on mount ──
   const loadData = useCallback(async () => {
     setLoading(true); setLoadError(null);
     try {
-      const { milestones: ms, phases: ps } = await loadFromNotion();
-      setMilestones(ms); setPhases(ps);
-    } catch(e) {
-      setLoadError(e.message);
-    } finally {
-      setLoading(false);
-    }
+      const { milestones: ms, phases: ps, categories: cats } = await loadFromNotion();
+      setMilestones(ms);
+      setPhases(ps);
+      setCategories(cats);
+    } catch(e) { setLoadError(e.message); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Update a field — optimistic local update + Notion write ──
   const updateMilestone = useCallback(async (id, field, value) => {
-    // Optimistic update
     setMilestones(prev => prev.map(m => {
       if (m.id !== id) return m;
       const updated = { ...m, [field]: value };
       if (field === "date") updated.month = dateToMonth(value);
       return updated;
     }));
-    // Write to Notion
     setSaving(true);
     try {
-      if (field === "blockedBy") {
-        await updateDependencies(id, value);
-      } else if (field === "category") {
-        await updateLinkedPhase(id, value, phases);
-      } else {
-        await updateTask(id, field, value);
-      }
-    } catch(e) {
-      console.error("Notion write failed:", e);
-      // Re-fetch to restore truth on error
-      loadData();
-    } finally {
-      setSaving(false);
-    }
+      if (field === "blockedBy") await updateDependencies(id, value);
+      else if (field === "category") await updateLinkedPhase(id, value, phases);
+      else await updateTask(id, field, value);
+    } catch(e) { console.error("Notion write failed:", e); loadData(); }
+    finally { setSaving(false); }
   }, [phases, loadData]);
 
-  // ── Add a new task ──
   const addMilestone = useCallback(async () => {
     setSaving(true);
     try {
       const phaseMap = Object.fromEntries(phases.map(p => [p.id, p.name]));
       const newTask = await createTask(phaseMap);
       setMilestones(prev => [...prev, newTask]);
-    } catch(e) {
-      console.error("Failed to create task:", e);
-    } finally {
-      setSaving(false);
-    }
+    } catch(e) { console.error("Failed to create task:", e); }
+    finally { setSaving(false); }
   }, [phases]);
 
-  // ── Delete (archive) a task ──
   const deleteMilestone = useCallback(async (id) => {
-    setMilestones(prev => prev
-      .filter(m => m.id !== id)
-      .map(m => ({ ...m, blockedBy: (m.blockedBy||[]).filter(d => d !== id) }))
-    );
+    setMilestones(prev => prev.filter(m=>m.id!==id).map(m=>({...m,blockedBy:(m.blockedBy||[]).filter(d=>d!==id)})));
     if (selectedId === id) setSelectedId(null);
     setSaving(true);
     try { await deleteTask(id); }
-    catch(e) { console.error("Failed to delete task:", e); loadData(); }
+    catch(e) { console.error("Failed to delete:", e); loadData(); }
     finally { setSaving(false); }
   }, [selectedId, loadData]);
 
   const filtered = useMemo(() => milestones.filter(m => {
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
-    const matchPhase = filterPhase === "All" || m.category === filterPhase;
+    const matchPhase  = filterPhase === "All" || m.category === filterPhase;
     return matchSearch && matchPhase;
   }), [milestones, search, filterPhase]);
 
-  const highlightId = hoverIdDesktop || selectedId;
+  const highlightId    = hoverIdDesktop || selectedId;
   const edgeHighlightSet = useMemo(() => selectedEdge ? new Set([selectedEdge.fromId, selectedEdge.toId]) : null, [selectedEdge]);
-  const chain = useMemo(() => buildChain(highlightId, milestones), [highlightId, milestones]);
+  const chain          = useMemo(() => buildChain(highlightId, milestones), [highlightId, milestones]);
   const selectedMilestone = selectedId ? milestones.find(m => m.id === selectedId) : null;
 
+  const handleClosePanel = () => setSelectedId(null);
   const handleTap = (id) => { setSelectedEdge(null); setSelectedId(prev=>prev===id?null:id); if(!isMobile) setHoverIdDesktop(null); };
   const handleEdgeTap = (fromId,toId) => { setSelectedId(null); setHoverIdDesktop(null); setSelectedEdge(prev=>prev?.fromId===fromId&&prev?.toId===toId?null:{fromId,toId}); };
 
-  if (loading || loadError) return <LoadingScreen error={loadError} onRetry={loadData} />;
+  if (loading || loadError) return <LoadingScreen error={loadError} onRetry={loadData}/>;
 
-  const phases_list = ["All", ...Object.keys(CATEGORIES)];
+  // Phase list for filter bar — derived entirely from Notion
+  const phaseNames = ["All", ...phases.map(p => p.name)];
 
   return (
     <div style={{ fontFamily:"'DM Mono','Courier New',monospace",background:"#0a0a0f",minHeight:"100vh",color:"#e2e8f0" }}>
@@ -186,7 +157,7 @@ export default function GanttApp() {
           <button onClick={loadData} title="Refresh from Notion" style={{ background:"#1a1a2e",border:"1px solid #2d2d4e",borderRadius:"6px",padding:"6px 10px",color:"#6b7280",cursor:"pointer",fontSize:"11px",fontFamily:"inherit" }}>↺</button>
           {isMobile && <button onClick={()=>setShowFilters(f=>!f)} style={{ background:showFilters?"#3b3b6b":"#1a1a2e",border:"1px solid #2d2d4e",borderRadius:"6px",padding:"6px 10px",color:showFilters?"#a78bfa":"#6b7280",cursor:"pointer",fontSize:"11px",fontFamily:"inherit" }}>⚙︎</button>}
           <div style={{ display:"flex",background:"#1a1a2e",borderRadius:"6px",padding:"2px",border:"1px solid #2d2d4e" }}>
-            {[["gantt","Timeline"],["deps",isMobile?"Deps":"Dep Map"],["list","List"]].map(([v,label])=>(
+            {[["gantt","Timeline"],["deps",isMobile?"Deps":"Dep Map"]].map(([v,label])=>(
               <button key={v} onClick={()=>setView(v)} style={{ padding:isMobile?"5px 8px":"5px 12px",borderRadius:"4px",border:"none",cursor:"pointer",fontSize:"11px",fontFamily:"inherit",fontWeight:v===view?"700":"400",background:v===view?"#3b3b6b":"transparent",color:v===view?"#a78bfa":"#6b7280" }}>{label}</button>
             ))}
           </div>
@@ -194,36 +165,40 @@ export default function GanttApp() {
       </div>
 
       {/* Filters */}
-      {view !== "list" && (!isMobile || showFilters) && (
+      {(!isMobile || showFilters) && (
         <div style={{ padding:isMobile?"10px 16px":"10px 28px",borderBottom:"1px solid #1e1e2e",background:"#0d0d18" }}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search milestones…" style={{ ...inputStyle,width:isMobile?"100%":"220px",marginBottom:"10px" }}/>
           <div style={{ display:"flex",gap:"6px",flexWrap:"wrap" }}>
-            {phases_list.map(p=>(
-              <button key={p} onClick={()=>{ setFilterPhase(p); if(isMobile) setShowFilters(false); }} style={{ padding:"4px 9px",borderRadius:"4px",border:`1px solid ${filterPhase===p?(CATEGORIES[p]||"#a78bfa"):"#2d2d4e"}`,background:filterPhase===p?`${CATEGORIES[p]||"#a78bfa"}22`:"transparent",color:filterPhase===p?(CATEGORIES[p]||"#a78bfa"):"#6b7280",fontSize:"10px",cursor:"pointer",fontFamily:"inherit" }}>{p}</button>
-            ))}
+            {phaseNames.map(p => {
+              const color = categories[p] || "#a78bfa";
+              const active = filterPhase === p;
+              return (
+                <button key={p} onClick={()=>{ setFilterPhase(p); if(isMobile) setShowFilters(false); }} style={{ padding:"4px 9px",borderRadius:"4px",border:`1px solid ${active?(p==="All"?"#a78bfa":color):"#2d2d4e"}`,background:active?`${p==="All"?"#a78bfa":color}22`:"transparent",color:active?(p==="All"?"#a78bfa":color):"#6b7280",fontSize:"10px",cursor:"pointer",fontFamily:"inherit" }}>{p}</button>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Main content */}
-      <div style={{ padding:view==="list"?"0":(isMobile?"14px 16px":"20px 28px"),overflowX:view==="list"?"hidden":"auto" }}>
-        {view==="gantt" && <GanttView milestones={filtered} allMilestones={milestones} chain={chain} highlightId={highlightId} isMobile={isMobile} onHover={id=>{ if(!isMobile) setHoverIdDesktop(id); }} onTap={handleTap} selectedId={selectedId}/>}
-        {view==="deps"  && <DepsView  milestones={filtered} allMilestones={milestones} chain={chain} highlightId={highlightId} isMobile={isMobile} onHover={id=>{ if(!isMobile) setHoverIdDesktop(id); }} onTap={handleTap} selectedId={selectedId} selectedEdge={selectedEdge} edgeHighlightSet={edgeHighlightSet} onEdgeTap={handleEdgeTap}/>}
-        {view==="list"  && <ListView  milestones={milestones} allMilestones={milestones} onUpdate={updateMilestone} onAdd={addMilestone} onDelete={deleteMilestone} onSelectMilestone={handleTap} selectedId={selectedId} isMobile={isMobile}/>}
+      <div style={{ padding:isMobile?"14px 16px":"20px 28px",overflowX:"auto" }}>
+        {view==="gantt" && <GanttView milestones={filtered} allMilestones={milestones} categories={categories} chain={chain} highlightId={highlightId} isMobile={isMobile} onHover={id=>{ if(!isMobile) setHoverIdDesktop(id); }} onTap={handleTap} selectedId={selectedId}/>}
+        {view==="deps"  && <DepsView  milestones={filtered} allMilestones={milestones} categories={categories} chain={chain} highlightId={highlightId} isMobile={isMobile} onHover={id=>{ if(!isMobile) setHoverIdDesktop(id); }} onTap={handleTap} selectedId={selectedId} selectedEdge={selectedEdge} edgeHighlightSet={edgeHighlightSet} onEdgeTap={handleEdgeTap}/>}
       </div>
 
       {/* Detail panel */}
-      {selectedMilestone && view!=="list" && (
+      {selectedMilestone && (
         isMobile
-          ? <BottomSheet milestone={selectedMilestone} allMilestones={milestones} onClose={()=>setSelectedId(null)} onNavigate={handleTap}/>
-          : <SidePanel   milestone={selectedMilestone} allMilestones={milestones} onClose={()=>setSelectedId(null)} onNavigate={handleTap}/>
+          ? <BottomSheet milestone={selectedMilestone} allMilestones={milestones} categories={categories} onClose={handleClosePanel} onNavigate={handleTap}/>
+          : <SidePanel   milestone={selectedMilestone} allMilestones={milestones} categories={categories} onClose={handleClosePanel} onNavigate={handleTap}/>
       )}
     </div>
   );
 }
 
 // ── Gantt View ─────────────────────────────────────────────────────────────────
-function GanttView({ milestones, allMilestones, chain, highlightId, isMobile, onHover, onTap, selectedId }) {
+function GanttView({ milestones, categories, chain, highlightId, isMobile, onHover, onTap, selectedId }) {
+  const [hoverId, setHoverId] = useState(null);
   const LABEL_W = isMobile ? 108 : 200;
   const monthGroups = MONTHS.map(month => ({ month, items: milestones.filter(m => m.month === month) })).filter(g => g.items.length > 0);
   const monthOffsets = MONTHS.map(m => ((MONTH_STARTS[m] - PROJECT_START) / (PROJECT_END - PROJECT_START)) * 100);
@@ -232,37 +207,47 @@ function GanttView({ milestones, allMilestones, chain, highlightId, isMobile, on
     <div>
       <div style={{ position:"relative", height:"22px", marginBottom:"6px", marginLeft:LABEL_W+8 }}>
         {MONTHS.map((month, i) => (
-          <div key={month} style={{ position:"absolute", left:`${monthOffsets[i]}%`, fontSize: isMobile?"8px":"9px", letterSpacing:"0.1em", textTransform:"uppercase", color:"#374151", whiteSpace:"nowrap" }}>
+          <div key={month} style={{ position:"absolute", left:`${monthOffsets[i]}%`, fontSize:isMobile?"8px":"9px", letterSpacing:"0.1em", textTransform:"uppercase", color:"#374151", whiteSpace:"nowrap" }}>
             {month.split(" ")[0]}
           </div>
         ))}
       </div>
       {monthGroups.map(({ month, items }) => (
-        <div key={month} style={{ marginBottom: isMobile?"14px":"18px" }}>
+        <div key={month} style={{ marginBottom:isMobile?"14px":"18px" }}>
           <div style={{ fontSize:"9px", letterSpacing:"0.15em", textTransform:"uppercase", color:"#2d3748", marginBottom:"4px", fontWeight:"700", borderLeft:"2px solid #1e1e2e", paddingLeft:"4px" }}>{month}</div>
           {items.map(m => {
             const inChain = highlightId ? chain.has(m.id) : true;
             const isSelected = m.id === selectedId;
-            const color = CATEGORIES[m.category];
-            const x = pct(m.date);
-            const sz = isSelected ? (isMobile?14:12) : (isMobile?11:9);
+            const isHovered  = m.id === hoverId;
+            const color = categories[m.category] || FALLBACK_COLOR;
+            const x   = pct(m.date);
+            const sz  = isSelected ? (isMobile?14:12) : (isMobile?11:9);
             return (
-              <div key={m.id} onMouseEnter={() => onHover(m.id)} onMouseLeave={() => onHover(null)} onClick={() => onTap(m.id)}
-                style={{ display:"flex", alignItems:"center", marginBottom:"2px", cursor:"pointer", opacity: highlightId&&!inChain ? 0.12 : 1, transition:"opacity 0.15s", minHeight: isMobile?"30px":"24px" }}>
-                <div style={{ width:LABEL_W, flexShrink:0, fontSize: isMobile?"9px":"10px", color: isSelected?color:(inChain&&highlightId)?"#e2e8f0":"#6b7280", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", paddingRight:"8px", fontWeight: isSelected?"700":"400" }}>
+              <div key={m.id}
+                onMouseEnter={() => { onHover(m.id); setHoverId(m.id); }}
+                onMouseLeave={() => { onHover(null);  setHoverId(null); }}
+                onClick={() => onTap(m.id)}
+                style={{ display:"flex", alignItems:"center", marginBottom:"2px", cursor:"pointer", opacity:highlightId&&!inChain?0.12:1, transition:"opacity 0.15s", minHeight:isMobile?"30px":"24px" }}>
+                <div style={{ width:LABEL_W, flexShrink:0, fontSize:isMobile?"9px":"10px", color:isSelected?color:(inChain&&highlightId)?"#e2e8f0":"#6b7280", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", paddingRight:"8px", fontWeight:isSelected?"700":"400" }}>
                   {m.name}
                 </div>
-                <div style={{ flex:1, position:"relative", height: isMobile?"30px":"22px" }}>
+                <div style={{ flex:1, position:"relative", height:isMobile?"30px":"22px" }}>
                   {MONTHS.map((mo,i) => <div key={mo} style={{ position:"absolute", left:`${monthOffsets[i]}%`, top:0, bottom:0, width:"1px", background:"#161625" }} />)}
-                  <div style={{ position:"absolute", left:`${x}%`, top:"50%", transform:"translate(-50%,-50%) rotate(45deg)", width:sz, height:sz, background: isSelected?color:`${color}cc`, boxShadow: isSelected?`0 0 10px ${color}88`:"none", transition:"all 0.15s", zIndex:2 }} />
+                  <div style={{ position:"absolute", left:`${x}%`, top:"50%", transform:"translate(-50%,-50%) rotate(45deg)", width:sz, height:sz, background:isSelected?color:`${color}cc`, boxShadow:isSelected?`0 0 18px 4px ${color}99, 0 0 6px 1px ${color}`:(isHovered?`0 0 10px 2px ${color}66`:"none"), transition:"all 0.15s", zIndex:2 }} />
+                  {(isHovered || isSelected) && (
+                    <div style={{ position:"absolute", left:`calc(${x}% + ${sz/2+6}px)`, top:"50%", transform:"translateY(-50%)", fontSize:"9px", color, whiteSpace:"nowrap", pointerEvents:"none", fontFamily:"'DM Mono',monospace", background:"#0a0a0f", padding:"1px 5px", borderRadius:"3px", border:`1px solid ${color}44`, zIndex:3 }}>
+                      {fmtDate(m.date)}
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
       ))}
+      {/* Legend — built from live categories */}
       <div style={{ display:"flex", gap:"10px", flexWrap:"wrap", marginTop:"20px", paddingTop:"14px", borderTop:"1px solid #1e1e2e" }}>
-        {Object.entries(CATEGORIES).map(([cat,color]) => (
+        {Object.entries(categories).map(([cat,color]) => (
           <div key={cat} style={{ display:"flex", alignItems:"center", gap:"5px" }}>
             <div style={{ width:"7px", height:"7px", background:color, transform:"rotate(45deg)", flexShrink:0 }} />
             <span style={{ fontSize:"9px", color:"#4b5563" }}>{cat}</span>
@@ -274,10 +259,10 @@ function GanttView({ milestones, allMilestones, chain, highlightId, isMobile, on
 }
 
 // ── Deps View ──────────────────────────────────────────────────────────────────
-function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onHover, onTap, selectedId, selectedEdge, edgeHighlightSet, onEdgeTap }) {
+function DepsView({ milestones, categories, chain, highlightId, isMobile, onHover, onTap, selectedId, selectedEdge, edgeHighlightSet, onEdgeTap }) {
   const [hoveredEdge, setHoveredEdge] = useState(null);
-  const filteredIds = new Set(milestones.map(m => m.id));
-  const ids = filteredIds;
+  const [hoveredNode, setHoveredNode] = useState(null);
+  const ids = new Set(milestones.map(m => m.id));
 
   const colOf = {};
   const assignCol = (id) => {
@@ -311,8 +296,7 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
   milestones.forEach(m => {
     m.blockedBy.forEach(depId => {
       if(!ids.has(depId)) return;
-      const fp=pos[depId],tp=pos[m.id];
-      if(!fp||!tp) return;
+      if(!pos[depId]||!pos[m.id]) return;
       if(!edgesByTarget[m.id]) edgesByTarget[m.id]=[];
       edgesByTarget[m.id].push(depId);
       if(!edgesBySource[depId]) edgesBySource[depId]=[];
@@ -323,9 +307,8 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
   const corridorEdges={};
   milestones.forEach(m => {
     m.blockedBy.forEach(depId => {
-      if(!ids.has(depId)) return;
-      const fp=pos[depId]; if(!fp) return;
-      const ck=fp.col;
+      if(!ids.has(depId)||!pos[depId]) return;
+      const ck=pos[depId].col;
       if(!corridorEdges[ck]) corridorEdges[ck]=[];
       corridorEdges[ck].push({fromId:depId,toId:m.id});
     });
@@ -346,7 +329,7 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
       if(!ids.has(depId)) return;
       const fp=pos[depId],tp=pos[m.id]; if(!fp||!tp) return;
       const fromM=milestones.find(x=>x.id===depId);
-      const edgeColor=CATEGORIES[fromM?.category]||"#6b7280";
+      const edgeColor=categories[fromM?.category]||FALLBACK_COLOR;
       const ck=fp.col;
       if(!corridorCounters[ck]) corridorCounters[ck]=0;
       const trackIdx=corridorCounters[ck]++;
@@ -363,14 +346,14 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
     });
   });
 
-  const maxRow=Math.max(...Object.values(pos).map(p=>p.row));
+  const maxRow=Object.values(pos).length>0?Math.max(...Object.values(pos).map(p=>p.row)):0;
   const totalW=numCols*COL_PITCH+PAD_X*2, totalH=(maxRow+1)*ROW_H+PAD_Y*2;
 
   const makePath=(x1,y1,x2,y2,tx)=>{
-    const R=5, h1=Math.abs(tx-x1), h2=Math.abs(x2-tx), vd=Math.abs(y2-y1);
+    const R=5,h1=Math.abs(tx-x1),h2=Math.abs(x2-tx),vd=Math.abs(y2-y1);
     const r=Math.min(R,h1/2,h2/2,vd/2);
     if(vd<1) return `M${x1},${y1} L${x2},${y2}`;
-    const down=y2>y1, vy1=down?y1+r:y1-r, vy2=down?y2-r:y2+r;
+    const down=y2>y1,vy1=down?y1+r:y1-r,vy2=down?y2-r:y2+r;
     return [`M${x1},${y1}`,`H${tx-r}`,`Q${tx},${y1} ${tx},${vy1}`,`V${vy2}`,`Q${tx},${y2} ${tx+r},${y2}`,`H${x2}`].join(" ");
   };
 
@@ -380,6 +363,14 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
     <div style={{ overflowX:"auto", overflowY:"auto", WebkitOverflowScrolling:"touch" }}>
       <svg width={totalW} height={totalH} style={{ display:"block", touchAction:"pan-x pan-y" }}>
         <defs>
+          <filter id="edge-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="node-glow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="4" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
           {uniqueColors.map(c => {
             const s=c.replace("#","");
             return (
@@ -390,6 +381,7 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
             );
           })}
         </defs>
+
         {edges.map(e => {
           const edgeKey=`${e.fromId}-${e.toId}`;
           const isEdgeSel=selectedEdge?.fromId===e.fromId&&selectedEdge?.toId===e.toId;
@@ -401,24 +393,28 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
           const isInactive=anythingActive&&!isActive;
           const safeId=e.color.replace("#","");
           const d=makePath(e.x1,e.y1,e.x2,e.y2,e.trackX);
-          const strokeW=isEdgeSel?2.5:isEdgeHov?2:isActive?2:1.2;
+          const strokeW=isEdgeSel?3.5:isEdgeHov?2.5:isActive?2:1.2;
           return (
             <g key={edgeKey} style={{ cursor:"pointer" }}
-              onMouseEnter={() => setHoveredEdge({fromId:e.fromId,toId:e.toId})}
-              onMouseLeave={() => setHoveredEdge(null)}
-              onClick={ev => { ev.stopPropagation(); onEdgeTap(e.fromId,e.toId); }}>
+              onMouseEnter={()=>setHoveredEdge({fromId:e.fromId,toId:e.toId})}
+              onMouseLeave={()=>setHoveredEdge(null)}
+              onClick={ev=>{ ev.stopPropagation(); onEdgeTap(e.fromId,e.toId); }}>
               <path d={d} fill="none" stroke="transparent" strokeWidth={14}/>
               <path d={d} fill="none" stroke={e.color} strokeWidth={strokeW}
+                filter={isEdgeSel||isEdgeHov?"url(#edge-glow)":undefined}
                 markerEnd={isInactive?`url(#arr-dim-${safeId})`:`url(#arr-${safeId})`}
-                opacity={isInactive?0.08:isActive?1:0.4} style={{ transition:"opacity 0.12s,stroke-width 0.12s" }}/>
+                opacity={isInactive?0.08:isActive?1:0.4}
+                style={{ transition:"opacity 0.12s,stroke-width 0.12s" }}/>
             </g>
           );
         })}
+
         {milestones.map(m => {
           const p=pos[m.id]; if(!p) return null;
-          const color=CATEGORIES[m.category];
+          const color=categories[m.category]||FALLBACK_COLOR;
           const inChain=highlightId?chain.has(m.id):true;
           const isSel=m.id===selectedId;
+          const isHov=m.id===hoveredNode;
           const isEdgeEndpoint=!!(edgeHighlightSet?.has(m.id))||!!(hoveredEdge&&(hoveredEdge.fromId===m.id||hoveredEdge.toId===m.id));
           const isEndpointFrom=!!(selectedEdge?.fromId===m.id)||!!(hoveredEdge?.fromId===m.id);
           const isEndpointTo=!!(selectedEdge?.toId===m.id)||!!(hoveredEdge?.toId===m.id);
@@ -427,21 +423,30 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
           const shouldDim=anythingActive&&!effectivelyActive;
           const maxC=isMobile?16:19, truncName=m.name.length>maxC?m.name.slice(0,maxC-1)+"…":m.name;
           const maxCC=isMobile?18:22, truncCat=m.category.length>maxCC?m.category.slice(0,maxCC-1)+"…":m.category;
+          const glowActive=isSel||isEdgeEndpoint;
           return (
             <g key={m.id} transform={`translate(${p.x},${p.y})`}
-              onMouseEnter={() => onHover(m.id)} onMouseLeave={() => onHover(null)}
-              onClick={() => onTap(m.id)} style={{ cursor:"pointer" }}>
+              onMouseEnter={()=>{ onHover(m.id); setHoveredNode(m.id); }}
+              onMouseLeave={()=>{ onHover(null); setHoveredNode(null); }}
+              onClick={()=>onTap(m.id)} style={{ cursor:"pointer" }}>
               <rect width={NODE_W} height={NODE_H} rx={5} fill="#0a0a0f"/>
               <rect width={NODE_W} height={NODE_H} rx={5}
-                fill={isSel||isEdgeEndpoint?`${color}1a`:"#0e0e1a"}
-                stroke={isSel?color:isEndpointTo?color:isEndpointFrom?color+"99":!shouldDim?"#2d2d50":"#18182a"}
-                strokeWidth={isSel||isEdgeEndpoint?1.8:1}
+                fill={isSel||isEdgeEndpoint?`${color}22`:"#0e0e1a"}
+                stroke={isSel?color:isEndpointTo?color:isEndpointFrom?color+"99":isHov?"#4d4d7a":"#2d2d50"}
+                strokeWidth={isSel?2:isEdgeEndpoint?2:isHov?1.5:1}
+                filter={glowActive?"url(#node-glow)":undefined}
                 opacity={shouldDim?0.2:1} style={{ transition:"opacity 0.12s" }}/>
               <rect width={3} height={NODE_H} rx={2} fill={color} opacity={shouldDim?0.1:1}/>
               <text x={11} y={isMobile?17:18} fill={shouldDim?"#2a2a3a":"#dde4f0"} fontSize={isMobile?9:10}
                 fontFamily="DM Mono,monospace" fontWeight={isSel||isEdgeEndpoint?"700":"400"} opacity={shouldDim?0.2:1}>{truncName}</text>
               <text x={11} y={isMobile?30:33} fill={color} fontSize={isMobile?7.5:8.5}
                 fontFamily="DM Mono,monospace" opacity={shouldDim?0.1:0.75}>{truncCat}</text>
+              {(isHov||isSel)&&!shouldDim&&(
+                <g transform={`translate(${NODE_W+6},${NODE_H/2-8})`}>
+                  <rect x={0} y={0} width={52} height={16} rx={3} fill="#0d0d18" stroke={`${color}55`} strokeWidth={1}/>
+                  <text x={26} y={11} fill={color} fontSize={8} fontFamily="DM Mono,monospace" textAnchor="middle">{fmtDate(m.date)}</text>
+                </g>
+              )}
             </g>
           );
         })}
@@ -450,285 +455,35 @@ function DepsView({ milestones, allMilestones, chain, highlightId, isMobile, onH
   );
 }
 
-// ── List View ──────────────────────────────────────────────────────────────────
-function ListView({ milestones, allMilestones, onUpdate, onAdd, onDelete, onSelectMilestone, selectedId, isMobile }) {
-  const [search, setSearch] = useState("");
-  const [filterPhase, setFilterPhase] = useState("All");
-  const [sortField, setSortField] = useState("date");
-  const [sortDir, setSortDir] = useState("asc");
-  const [expandedId, setExpandedId] = useState(null);
-
-  const phases = ["All", ...Object.keys(CATEGORIES)];
-
-  const sorted = useMemo(() => {
-    let list = milestones.filter(m => {
-      const ms = m.name.toLowerCase().includes(search.toLowerCase()) || m.description.toLowerCase().includes(search.toLowerCase()) || m.owner.toLowerCase().includes(search.toLowerCase());
-      const mp = filterPhase === "All" || m.category === filterPhase;
-      return ms && mp;
-    });
-    list = [...list].sort((a, b) => {
-      let va = a[sortField] ?? "", vb = b[sortField] ?? "";
-      if (sortField === "date") { va = new Date(va); vb = new Date(vb); }
-      if (va < vb) return sortDir === "asc" ? -1 : 1;
-      if (va > vb) return sortDir === "asc" ? 1 : -1;
-      return 0;
-    });
-    return list;
-  }, [milestones, search, filterPhase, sortField, sortDir]);
-
-  const toggleSort = (field) => {
-    if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortField(field); setSortDir("asc"); }
-  };
-
-  const SortIcon = ({ field }) => {
-    if (sortField !== field) return <span style={{ color:"#374151", marginLeft:"3px" }}>⇅</span>;
-    return <span style={{ color:"#a78bfa", marginLeft:"3px" }}>{sortDir==="asc"?"↑":"↓"}</span>;
-  };
-
-  const thStyle = (field) => ({
-    padding:"8px 10px", textAlign:"left", fontSize:"9px", letterSpacing:"0.1em",
-    textTransform:"uppercase", color:"#4b5563", fontWeight:"700", cursor:"pointer",
-    whiteSpace:"nowrap", background:"#0d0d18", borderBottom:"1px solid #1e1e2e",
-    userSelect:"none",
-  });
-
-  return (
-    <div style={{ display:"flex", flexDirection:"column", height:"calc(100vh - 70px)" }}>
-      {/* List toolbar */}
-      <div style={{ padding:"12px 20px", borderBottom:"1px solid #1e1e2e", background:"#0d0d18", display:"flex", gap:"10px", alignItems:"center", flexWrap:"wrap", flexShrink:0 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search tasks…"
-          style={{ ...inputStyle, width:"180px" }} />
-        <div style={{ display:"flex", gap:"5px", flexWrap:"wrap" }}>
-          {phases.map(p => (
-            <button key={p} onClick={() => setFilterPhase(p)} style={{
-              padding:"3px 9px", borderRadius:"4px", fontSize:"10px", cursor:"pointer", fontFamily:"inherit",
-              border:`1px solid ${filterPhase===p?(CATEGORIES[p]||"#a78bfa"):"#2d2d4e"}`,
-              background: filterPhase===p?`${CATEGORIES[p]||"#a78bfa"}22`:"transparent",
-              color: filterPhase===p?(CATEGORIES[p]||"#a78bfa"):"#6b7280",
-            }}>{p}</button>
-          ))}
-        </div>
-        <div style={{ marginLeft:"auto" }}>
-          <button onClick={onAdd} style={{
-            padding:"6px 14px", borderRadius:"5px", border:"1px solid #3b3b6b",
-            background:"#1a1a2e", color:"#a78bfa", cursor:"pointer", fontSize:"11px", fontFamily:"inherit", fontWeight:"700",
-          }}>+ Add Task</button>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div style={{ overflowY:"auto", overflowX:"auto", flex:1 }}>
-        <table style={{ width:"100%", borderCollapse:"collapse", minWidth:"900px" }}>
-          <thead>
-            <tr>
-              <th style={thStyle("name")} onClick={() => toggleSort("name")}>Name <SortIcon field="name"/></th>
-              <th style={thStyle("category")} onClick={() => toggleSort("category")}>Phase <SortIcon field="category"/></th>
-              <th style={thStyle("date")} onClick={() => toggleSort("date")}>Date <SortIcon field="date"/></th>
-              <th style={thStyle("priority")} onClick={() => toggleSort("priority")}>Priority <SortIcon field="priority"/></th>
-              <th style={thStyle("status")} onClick={() => toggleSort("status")}>Status <SortIcon field="status"/></th>
-              <th style={thStyle("owner")} onClick={() => toggleSort("owner")}>Owner <SortIcon field="owner"/></th>
-              <th style={thStyle("effort")} onClick={() => toggleSort("effort")}>Effort <SortIcon field="effort"/></th>
-              <th style={{...thStyle("blockedBy"), cursor:"default"}}>Blocked By</th>
-              <th style={{...thStyle(), cursor:"default", width:"32px"}}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map(m => (
-              <TaskRow key={m.id} m={m} allMilestones={allMilestones}
-                onUpdate={onUpdate} onDelete={onDelete}
-                isExpanded={expandedId === m.id}
-                onToggleExpand={() => setExpandedId(expandedId===m.id?null:m.id)}
-                isSelected={selectedId === m.id}
-                onSelect={() => onSelectMilestone(m.id)}
-              />
-            ))}
-          </tbody>
-        </table>
-        {sorted.length === 0 && (
-          <div style={{ textAlign:"center", padding:"40px", color:"#374151", fontSize:"12px" }}>No tasks match your filters.</div>
-        )}
-      </div>
-
-      <div style={{ padding:"8px 20px", borderTop:"1px solid #1e1e2e", background:"#0d0d18", fontSize:"10px", color:"#374151", flexShrink:0 }}>
-        {sorted.length} of {milestones.length} tasks
-      </div>
-    </div>
-  );
-}
-
-// ── Task Row ───────────────────────────────────────────────────────────────────
-function TaskRow({ m, allMilestones, onUpdate, onDelete, isExpanded, onToggleExpand, isSelected, onSelect }) {
-  const color = CATEGORIES[m.category] || "#6b7280";
-  const priColor = PRIORITIES[m.priority] || "#6b7280";
-  const statColor = STATUSES[m.status] || "#374151";
-
-  const tdStyle = {
-    padding:"0", borderBottom:"1px solid #111120", verticalAlign:"top",
-  };
-  const cellInner = {
-    padding:"8px 10px", display:"flex", alignItems:"flex-start",
-  };
-
-  // Inline editable cell helpers
-  const EditText = ({ field, value, style={} }) => (
-    <input defaultValue={value} onBlur={e => onUpdate(m.id, field, e.target.value)}
-      onKeyDown={e => { if(e.key==="Enter") e.target.blur(); }}
-      style={{ ...inputStyle, ...style, border:"none", background:"transparent", padding:"0", fontSize:"11px", color:"#e2e8f0" }} />
-  );
-
-  const EditSelect = ({ field, value, options, colorMap }) => (
-    <select value={value} onChange={e => onUpdate(m.id, field, e.target.value)}
-      style={{ ...inputStyle, border:"none", background:"transparent", padding:"0", fontSize:"11px",
-        color: colorMap?colorMap[value]:"#e2e8f0", cursor:"pointer", appearance:"none", width:"auto" }}>
-      {options.map(o => <option key={o} value={o} style={{ background:"#0d0d18", color: colorMap?colorMap[o]:"#e2e8f0" }}>{o}</option>)}
-    </select>
-  );
-
-  // Blocked-by multi-select (click chips to remove, dropdown to add)
-  const BlockedByEditor = () => {
-    const available = allMilestones.filter(x => x.id !== m.id && !m.blockedBy.includes(x.id));
-    return (
-      <div style={{ display:"flex", flexWrap:"wrap", gap:"3px", alignItems:"center" }}>
-        {m.blockedBy.map(depId => {
-          const dep = allMilestones.find(x => x.id === depId);
-          if (!dep) return null;
-          const dc = CATEGORIES[dep.category] || "#6b7280";
-          return (
-            <span key={depId} style={{ display:"inline-flex", alignItems:"center", gap:"3px", padding:"2px 6px", borderRadius:"3px", background:`${dc}22`, border:`1px solid ${dc}55`, fontSize:"9px", color:dc }}>
-              {dep.name.length > 18 ? dep.name.slice(0,17)+"…" : dep.name}
-              <span onClick={() => onUpdate(m.id, "blockedBy", m.blockedBy.filter(x=>x!==depId))}
-                style={{ cursor:"pointer", color:"#6b7280", fontSize:"10px", lineHeight:1, marginLeft:"1px" }}>×</span>
-            </span>
-          );
-        })}
-        {available.length > 0 && (
-          <select value="" onChange={e => { if(e.target.value) onUpdate(m.id,"blockedBy",[...m.blockedBy,e.target.value]); }}
-            style={{ ...inputStyle, width:"auto", fontSize:"9px", padding:"2px 5px", color:"#6b7280" }}>
-            <option value="">+ Add dep</option>
-            {available.map(x => <option key={x.id} value={x.id} style={{ background:"#0d0d18" }}>{x.name}</option>)}
-          </select>
-        )}
-      </div>
-    );
-  };
-
-  const rowBg = isSelected ? `${color}0d` : isExpanded ? "#0d0d18" : "transparent";
-
-  return (
-    <>
-      <tr style={{ background:rowBg, transition:"background 0.1s" }}>
-        {/* Name */}
-        <td style={tdStyle}>
-          <div style={{ ...cellInner, gap:"6px" }}>
-            <div style={{ width:"3px", height:"34px", background:color, borderRadius:"2px", flexShrink:0, marginTop:"2px" }} />
-            <div style={{ flex:1, minWidth:0 }}>
-              <input defaultValue={m.name} onBlur={e => onUpdate(m.id,"name",e.target.value)}
-                onKeyDown={e => { if(e.key==="Enter") e.target.blur(); }}
-                style={{ ...inputStyle, border:"none", background:"transparent", padding:"0", fontSize:"11px", color:"#e2e8f0", fontWeight:"600" }} />
-              <div style={{ fontSize:"9px", color:"#374151", marginTop:"2px" }}>{m.id}</div>
-            </div>
-            <button onClick={onToggleExpand} title="Show notes & description"
-              style={{ background:"none", border:"none", cursor:"pointer", color: isExpanded?"#a78bfa":"#374151", fontSize:"12px", padding:"2px", flexShrink:0 }}>
-              {isExpanded?"▲":"▼"}
-            </button>
-          </div>
-        </td>
-        {/* Phase */}
-        <td style={tdStyle}><div style={cellInner}>
-          <select value={m.category} onChange={e => onUpdate(m.id,"category",e.target.value)}
-            style={{ ...inputStyle, border:"none", background:"transparent", padding:"0", fontSize:"11px", color, cursor:"pointer", appearance:"none" }}>
-            {Object.keys(CATEGORIES).map(c => <option key={c} value={c} style={{ background:"#0d0d18", color:CATEGORIES[c] }}>{c}</option>)}
-          </select>
-        </div></td>
-        {/* Date */}
-        <td style={tdStyle}><div style={cellInner}>
-          <input type="date" value={m.date} onChange={e => onUpdate(m.id,"date",e.target.value)}
-            style={{ ...inputStyle, border:"none", background:"transparent", padding:"0", fontSize:"11px", color:"#94a3b8", colorScheme:"dark" }} />
-        </div></td>
-        {/* Priority */}
-        <td style={tdStyle}><div style={cellInner}>
-          <EditSelect field="priority" value={m.priority} options={Object.keys(PRIORITIES)} colorMap={PRIORITIES} />
-        </div></td>
-        {/* Status */}
-        <td style={tdStyle}><div style={cellInner}>
-          <EditSelect field="status" value={m.status} options={Object.keys(STATUSES)} colorMap={STATUSES} />
-        </div></td>
-        {/* Owner */}
-        <td style={tdStyle}><div style={cellInner}>
-          <input defaultValue={m.owner} placeholder="—" onBlur={e => onUpdate(m.id,"owner",e.target.value)}
-            onKeyDown={e => { if(e.key==="Enter") e.target.blur(); }}
-            style={{ ...inputStyle, border:"none", background:"transparent", padding:"0", fontSize:"11px", color:"#94a3b8", width:"80px" }} />
-        </div></td>
-        {/* Effort */}
-        <td style={tdStyle}><div style={cellInner}>
-          <EditSelect field="effort" value={m.effort} options={["XS","S","M","L","XL"]} />
-        </div></td>
-        {/* Blocked By */}
-        <td style={tdStyle}><div style={{ ...cellInner, minWidth:"160px" }}>
-          <BlockedByEditor />
-        </div></td>
-        {/* Delete */}
-        <td style={tdStyle}><div style={{ ...cellInner, justifyContent:"center" }}>
-          <button onClick={() => onDelete(m.id)}
-            style={{ background:"none", border:"none", cursor:"pointer", color:"#2d2d4e", fontSize:"14px", padding:"2px" }}
-            title="Delete task">×</button>
-        </div></td>
-      </tr>
-      {/* Expanded row: description + notes */}
-      {isExpanded && (
-        <tr style={{ background:"#0a0a12" }}>
-          <td colSpan={9} style={{ padding:"0 16px 14px 26px", borderBottom:"1px solid #1e1e2e" }}>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"16px", paddingTop:"10px" }}>
-              <div>
-                <div style={{ fontSize:"9px", letterSpacing:"0.1em", textTransform:"uppercase", color:"#4b5563", marginBottom:"5px" }}>Description / Unlocks</div>
-                <textarea defaultValue={m.description} onBlur={e => onUpdate(m.id,"description",e.target.value)}
-                  placeholder="What this milestone delivers and unlocks…"
-                  rows={4} style={{ ...inputStyle, resize:"vertical", lineHeight:"1.7", fontSize:"11px", color:"#94a3b8" }} />
-              </div>
-              <div>
-                <div style={{ fontSize:"9px", letterSpacing:"0.1em", textTransform:"uppercase", color:"#4b5563", marginBottom:"5px" }}>Notes</div>
-                <textarea defaultValue={m.notes} onBlur={e => onUpdate(m.id,"notes",e.target.value)}
-                  placeholder="Running notes, decisions, links, concerns…"
-                  rows={4} style={{ ...inputStyle, resize:"vertical", lineHeight:"1.7", fontSize:"11px", color:"#94a3b8" }} />
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
 // ── Side Panel ─────────────────────────────────────────────────────────────────
-function SidePanel({ milestone, allMilestones, onClose, onNavigate }) {
+function SidePanel({ milestone, allMilestones, categories, onClose, onNavigate }) {
   return (
     <div style={{ position:"fixed", top:0, right:0, bottom:0, width:"300px", borderLeft:"1px solid #1e1e2e", padding:"20px", background:"#0d0d18", overflowY:"auto", zIndex:100 }}>
-      <Detail milestone={milestone} allMilestones={allMilestones} onClose={onClose} onNavigate={onNavigate} />
+      <Detail milestone={milestone} allMilestones={allMilestones} categories={categories} onClose={onClose} onNavigate={onNavigate}/>
     </div>
   );
 }
 
 // ── Bottom Sheet ───────────────────────────────────────────────────────────────
-function BottomSheet({ milestone, allMilestones, onClose, onNavigate }) {
+function BottomSheet({ milestone, allMilestones, categories, onClose, onNavigate }) {
   return (
     <>
-      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"#00000077", zIndex:90 }} />
+      <div onClick={onClose} style={{ position:"fixed", inset:0, background:"#00000077", zIndex:90 }}/>
       <div style={{ position:"fixed", left:0, right:0, bottom:0, background:"#0d0d18", borderTop:"1px solid #2d2d4e", borderRadius:"14px 14px 0 0", padding:"16px 20px 40px", zIndex:100, maxHeight:"78vh", overflowY:"auto" }}>
-        <div style={{ width:"36px", height:"3px", background:"#2d2d4e", borderRadius:"2px", margin:"0 auto 16px" }} />
-        <Detail milestone={milestone} allMilestones={allMilestones} onClose={onClose} onNavigate={onNavigate} />
+        <div style={{ width:"36px", height:"3px", background:"#2d2d4e", borderRadius:"2px", margin:"0 auto 16px" }}/>
+        <Detail milestone={milestone} allMilestones={allMilestones} categories={categories} onClose={onClose} onNavigate={onNavigate}/>
       </div>
     </>
   );
 }
 
 // ── Detail Content ─────────────────────────────────────────────────────────────
-function Detail({ milestone, allMilestones, onClose, onNavigate }) {
-  const color = CATEGORIES[milestone.category];
-  const priColor = PRIORITIES[milestone.priority] || "#6b7280";
-  const statColor = STATUSES[milestone.status] || "#374151";
+function Detail({ milestone, allMilestones, categories, onClose, onNavigate }) {
+  const color     = categories[milestone.category] || FALLBACK_COLOR;
+  const priColor  = PRIORITIES[milestone.priority] || "#6b7280";
+  const statColor = STATUSES[milestone.status]     || "#374151";
   const blockedByMs = (milestone.blockedBy||[]).map(id => allMilestones.find(m => m.id === id)).filter(Boolean);
-  const unlocks = allMilestones.filter(m => (m.blockedBy||[]).includes(milestone.id));
+  const unlocks     = allMilestones.filter(m => (m.blockedBy||[]).includes(milestone.id));
 
   const Chip = ({ label, col }) => (
     <span style={{ display:"inline-block", padding:"2px 8px", borderRadius:"3px", background:`${col}22`, border:`1px solid ${col}55`, fontSize:"9px", color:col, marginRight:"4px" }}>{label}</span>
@@ -742,49 +497,36 @@ function Detail({ milestone, allMilestones, onClose, onNavigate }) {
       </div>
       <div style={{ fontSize:"15px", fontWeight:"700", color:"#f1f5f9", marginBottom:"6px", lineHeight:"1.4" }}>{milestone.name}</div>
       <div style={{ fontSize:"11px", color:"#6b7280", marginBottom:"10px" }}>
-        {new Date(milestone.date).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+        {milestone.date ? new Date(milestone.date+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}) : "No date"}
       </div>
-
-      {/* Metadata chips */}
       <div style={{ display:"flex", flexWrap:"wrap", gap:"4px", marginBottom:"14px" }}>
-        {milestone.priority && <Chip label={milestone.priority} col={priColor} />}
-        {milestone.status   && <Chip label={milestone.status}   col={statColor} />}
-        {milestone.effort   && <Chip label={`Effort: ${milestone.effort}`} col="#4b5563" />}
-        {milestone.owner    && <Chip label={`Owner: ${milestone.owner}`}   col="#6b7280" />}
+        {milestone.priority && <Chip label={milestone.priority} col={priColor}/>}
+        {milestone.status   && <Chip label={milestone.status}   col={statColor}/>}
+        {milestone.effort != null && <Chip label={`Complexity: ${milestone.effort}`} col="#4b5563"/>}
+        {milestone.owner    && <Chip label={`Owner: ${milestone.owner}`} col="#6b7280"/>}
       </div>
-
       {milestone.description && (
         <div style={{ fontSize:"11px", color:"#94a3b8", lineHeight:"1.8", marginBottom:"14px" }}>{milestone.description}</div>
       )}
-
-      {/* Notes */}
       {milestone.notes && (
         <div style={{ marginBottom:"14px" }}>
           <div style={{ fontSize:"9px", letterSpacing:"0.1em", textTransform:"uppercase", color:"#6b7280", marginBottom:"6px" }}>Notes</div>
-          <div style={{ fontSize:"11px", color:"#cbd5e1", lineHeight:"1.8", background:"#1a1a2e", borderRadius:"5px", padding:"10px 12px", borderLeft:"2px solid #a78bfa", whiteSpace:"pre-wrap" }}>
-            {milestone.notes}
-          </div>
+          <div style={{ fontSize:"11px", color:"#cbd5e1", lineHeight:"1.8", background:"#1a1a2e", borderRadius:"5px", padding:"10px 12px", borderLeft:"2px solid #a78bfa", whiteSpace:"pre-wrap" }}>{milestone.notes}</div>
         </div>
       )}
-
       {blockedByMs.length > 0 && (
         <div style={{ marginBottom:"14px" }}>
           <div style={{ fontSize:"9px", letterSpacing:"0.1em", textTransform:"uppercase", color:"#6b7280", marginBottom:"7px" }}>Blocked By</div>
           {blockedByMs.map(dep => (
-            <div key={dep.id} onClick={() => onNavigate(dep.id)} style={{ padding:"8px 10px", marginBottom:"4px", background:"#1a1a2e", borderRadius:"5px", fontSize:"11px", color:"#a78bfa", cursor:"pointer", borderLeft:`2px solid ${CATEGORIES[dep.category]}` }}>
-              {dep.name}
-            </div>
+            <div key={dep.id} onClick={()=>onNavigate(dep.id)} style={{ padding:"8px 10px", marginBottom:"4px", background:"#1a1a2e", borderRadius:"5px", fontSize:"11px", color:"#a78bfa", cursor:"pointer", borderLeft:`2px solid ${categories[dep.category]||FALLBACK_COLOR}` }}>{dep.name}</div>
           ))}
         </div>
       )}
-
       {unlocks.length > 0 && (
         <div>
           <div style={{ fontSize:"9px", letterSpacing:"0.1em", textTransform:"uppercase", color:"#6b7280", marginBottom:"7px" }}>Unlocks</div>
           {unlocks.map(m => (
-            <div key={m.id} onClick={() => onNavigate(m.id)} style={{ padding:"8px 10px", marginBottom:"4px", background:"#1a1a2e", borderRadius:"5px", fontSize:"11px", color:"#6ee7b7", cursor:"pointer", borderLeft:`2px solid ${CATEGORIES[m.category]}` }}>
-              {m.name}
-            </div>
+            <div key={m.id} onClick={()=>onNavigate(m.id)} style={{ padding:"8px 10px", marginBottom:"4px", background:"#1a1a2e", borderRadius:"5px", fontSize:"11px", color:"#6ee7b7", cursor:"pointer", borderLeft:`2px solid ${categories[m.category]||FALLBACK_COLOR}` }}>{m.name}</div>
           ))}
         </div>
       )}
