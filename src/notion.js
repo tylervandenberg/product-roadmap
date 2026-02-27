@@ -2,8 +2,8 @@
 // All Notion API interaction lives here.
 // The app calls these functions instead of touching Notion directly.
 
-const PHASES_DB = "2cfbe7634321826eb687015146991e60";
-const TASKS_DB  = "9f6be763432182c7be3201e0662ebd56";
+const PHASES_DB = "2cfbe763-4321-826e-b687-015146991e60";
+const TASKS_DB  = "9f6be763-4321-82c7-be32-01e0662ebd56";
 
 // Phase name → color (must match CATEGORIES in App.jsx)
 const CATEGORY_COLORS = {
