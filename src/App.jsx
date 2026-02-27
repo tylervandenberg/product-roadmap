@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 
 const CATEGORIES = {
   "Definition": "#f59e0b",
@@ -14,8 +14,7 @@ const CATEGORIES = {
 };
 
 const MILESTONES = [
-  // March
-  { id: "m1", date: "2026-03-05", name: "Requirements & Constraints", category: "Definition", month: "March 2026", description: "PRD-lite with measurable must/should/won't, incl. materials + dishwasher/heated dry + boil intent.", blockedBy: ["Problem Definition", "Target User & Use Case"] },
+  { id: "m1", date: "2026-03-05", name: "Requirements & Constraints", category: "Definition", month: "March 2026", description: "PRD-lite with measurable must/should/won't, incl. materials + dishwasher/heated dry + boil intent.", blockedBy: [] },
   { id: "m2", date: "2026-03-09", name: "Manufacturing Choices", category: "Definition", month: "March 2026", description: "LSR confirmed + provisional stainless process candidates + assembly approach assumptions.", blockedBy: ["m1"] },
   { id: "m3", date: "2026-03-11", name: "Cost & Price", category: "Definition", month: "March 2026", description: "MSRP + COGS ceiling + margin target + cost-down decision tree.", blockedBy: ["m1"] },
   { id: "m4", date: "2026-03-12", name: "Regulatory Scope Lock", category: "Compliance & Verification", month: "March 2026", description: "What compliance expectations apply (children's product expectations + food-contact evidence approach).", blockedBy: ["m1"] },
@@ -31,27 +30,19 @@ const MILESTONES = [
   { id: "m14", date: "2026-03-25", name: "Tolerance & Fit Strategy", category: "Design & Prototype", month: "March 2026", description: "Numeric targets for wobble/torque/back-off/retention.", blockedBy: ["m5"] },
   { id: "m15", date: "2026-03-25", name: "Verification Test Matrix + Pass/Fail", category: "Compliance & Verification", month: "March 2026", description: "Test plan including dishwasher heated dry + boil, staining/odor, interface torque/wobble.", blockedBy: ["m6", "m14"] },
   { id: "m16", date: "2026-03-28", name: "DFM Pass", category: "Design & Prototype", month: "March 2026", description: "LSR DFM readiness (gates/vents/shutoffs/flash risk/cosmetic zones) + stainless manufacturability notes.", blockedBy: ["m14"] },
-
-  // April
   { id: "m17", date: "2026-04-04", name: "Design Freeze v1", category: "Design & Prototype", month: "April 2026", description: "Quote/tooling kickoff-ready CAD + drawings + change log.", blockedBy: ["m16"] },
   { id: "m18", date: "2026-04-04", name: "Compliance Plan Freeze v1", category: "Compliance & Verification", month: "April 2026", description: "Complete compliance planning packet (scope, guardrails, evidence tracker, test plan, lab plan).", blockedBy: ["m4", "m6", "m10", "m13", "m15"] },
   { id: "m19", date: "2026-04-10", name: "Supplier Lock", category: "Suppliers & Tooling", month: "April 2026", description: "Suppliers chosen + terms + tool ownership + revision policy in writing.", blockedBy: ["m17"] },
   { id: "m20", date: "2026-04-17", name: "Color Standard Lock", category: "Suppliers & Tooling", month: "April 2026", description: "Objective color target + acceptance method + lot consistency plan.", blockedBy: ["m19", "m6"] },
   { id: "m21", date: "2026-04-20", name: "Tooling Kickoff (PO + Schedule)", category: "Suppliers & Tooling", month: "April 2026", description: "Tooling PO placed + T0/T1 dates on calendar + revision allowances clear.", blockedBy: ["m19", "m20"] },
   { id: "m22", date: "2026-04-30", name: "Tool Samples Plan Confirmed", category: "Suppliers & Tooling", month: "April 2026", description: "Confirm expected T1 delivery timing and shipping plan.", blockedBy: ["m21"] },
-
-  // May
   { id: "m23", date: "2026-05-01", name: "Tool Design Review Approval", category: "Suppliers & Tooling", month: "May 2026", description: "You approve gate/vent/parting/shutoff choices before steel cut.", blockedBy: ["m21"] },
   { id: "m24", date: "2026-05-03", name: "Drop Store Setup (Shopify skeleton)", category: "Marketing", month: "May 2026", description: "Store foundation: PDP template, policies, shipping profiles, notify-me.", blockedBy: ["m12", "m6"] },
   { id: "m25", date: "2026-05-10", name: "Test Plan Freeze (EVT/DVT/PVT)", category: "Testing & Validation", month: "May 2026", description: "The master test plan with cycle counts + pass/fail, incl dishwasher heated dry + boil.", blockedBy: ["m15", "m17"] },
   { id: "m26", date: "2026-05-22", name: "EVT Complete + Baseline Performance", category: "Testing & Validation", month: "May 2026", description: "It works end-to-end; baseline torque/wobble/effort recorded.", blockedBy: ["m25"] },
-
-  // June
   { id: "m27", date: "2026-06-07", name: "Interface & Retention Validation", category: "Testing & Validation", month: "June 2026", description: "Wobble/torque/back-off/retention meets thresholds across multiple units.", blockedBy: ["m26"] },
   { id: "m28", date: "2026-06-14", name: "Cleaning & Durability Cycling PASS", category: "Testing & Validation", month: "June 2026", description: "Dishwasher (heated dry ON) + boil cycles + stain/odor results documented.", blockedBy: ["m26", "m25"] },
   { id: "m29", date: "2026-06-28", name: "Tool Samples Received (T1)", category: "Suppliers & Tooling", month: "June 2026", description: "Production-intent parts physically in hand.", blockedBy: ["m21", "m23"] },
-
-  // July
   { id: "m30", date: "2026-07-02", name: "DVT Freeze (Design Freeze v2)", category: "Testing & Validation", month: "July 2026", description: "All high severity issues closed; design stable for pilot run.", blockedBy: ["m28", "m27"] },
   { id: "m31", date: "2026-07-05", name: "Launch Creative Kit", category: "Marketing", month: "July 2026", description: "Hero video + hooks + photo set + b-roll library ready for launch week.", blockedBy: ["m24"] },
   { id: "m32", date: "2026-07-09", name: "PVT / Pilot Run Plan + Yield Targets", category: "Testing & Validation", month: "July 2026", description: "Pilot plan with measurable yield and defect criteria.", blockedBy: ["m30", "m23"] },
@@ -60,8 +51,6 @@ const MILESTONES = [
   { id: "m35", date: "2026-07-20", name: "Launch Inventory Plan + Drop Schedule Lock", category: "Launch Readiness", month: "July 2026", description: "Drop quantity, holdbacks, ship promise, drop date/time committed.", blockedBy: ["m33"] },
   { id: "m36", date: "2026-07-24", name: "Final Packaging + IFU Lock", category: "Launch Readiness", month: "July 2026", description: "Packaging and instructions reflect validated dishwasher/heated dry + boil safe conditions.", blockedBy: ["m28", "m6"] },
   { id: "m37", date: "2026-07-29", name: "Final QC Plan", category: "Launch Readiness", month: "July 2026", description: "Final go/no-go functional checks and incoming part inspections.", blockedBy: ["m33"] },
-
-  // August
   { id: "m38", date: "2026-08-01", name: "Shopify Store Finalization", category: "Launch Readiness", month: "August 2026", description: "PDP/FAQ/policies/shipping/notify-me + post-purchase flows fully working.", blockedBy: ["m24", "m36"] },
   { id: "m39", date: "2026-08-08", name: "Dress Rehearsal (End-to-End)", category: "Launch Readiness", month: "August 2026", description: "Test orders through checkout → pack → ship → support → return.", blockedBy: ["m38", "m37"] },
   { id: "m40", date: "2026-08-12", name: "Inventory Packed + Ready to Ship", category: "Launch Readiness", month: "August 2026", description: "Units assembled/QC'd/packed or staged to ship same/next day.", blockedBy: ["m37", "m36"] },
@@ -75,8 +64,423 @@ const MILESTONES = [
   { id: "m48", date: "2026-08-31", name: "Defect Pareto + QC Tightening Plan", category: "Refine & Scale", month: "August 2026", description: "Rank defect causes and update inspection/QC to catch them.", blockedBy: ["m46"] },
   { id: "m49", date: "2026-08-31", name: "Next Drop Plan (Qty + Date + Constraints)", category: "Refine & Scale", month: "August 2026", description: "A realistic Drop #2 plan aligned to lead times and yield.", blockedBy: ["m46"] },
   { id: "m50", date: "2026-08-31", name: "Data Pack Assembled", category: "Retrospective", month: "August 2026", description: "All facts in one place (timeline, yield, defects, returns, marketing).", blockedBy: ["m46"] },
+  { id: "m51", date: "2026-09-02", name: "Quality & Returns Postmortem", category: "Retrospective", month: "September 2026", description: "Why defects/returns happened and why QC missed them.", blockedBy: ["m50"] },
+  { id: "m52", date: "2026-09-07", name: "Action Register + Owners + Dates", category: "Retrospective", month: "September 2026", description: "Top 10 actions assigned with dates and metrics.", blockedBy: ["m51", "m50"] },
+];
 
-  // September
+const MONTHS = ["March 2026", "April 2026", "May 2026", "June 2026", "July 2026", "August 2026", "September 2026"];
+const MONTH_STARTS = {
+  "March 2026": new Date("2026-03-01"),
+  "April 2026": new Date("2026-04-01"),
+  "May 2026": new Date("2026-05-01"),
+  "June 2026": new Date("2026-06-01"),
+  "July 2026": new Date("2026-07-01"),
+  "August 2026": new Date("2026-08-01"),
+  "September 2026": new Date("2026-09-01"),
+};
+const PROJECT_START = new Date("2026-03-01");
+const PROJECT_END = new Date("2026-09-30");
+
+function pct(dateStr) {
+  return ((new Date(dateStr) - PROJECT_START) / (PROJECT_END - PROJECT_START)) * 100;
+}
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(typeof window !== "undefined" ? window.innerWidth < 640 : false);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
+function buildChain(id) {
+  if (!id) return new Set();
+  const chain = new Set([id]);
+  const addDeps = (mid) => {
+    const m = MILESTONES.find(x => x.id === mid);
+    if (!m) return;
+    m.blockedBy.forEach(dep => {
+      const depM = MILESTONES.find(x => x.id === dep);
+      if (depM && !chain.has(dep)) { chain.add(dep); addDeps(dep); }
+    });
+  };
+  const addDependents = (mid) => {
+    MILESTONES.forEach(m => {
+      if (m.blockedBy.includes(mid) && !chain.has(m.id)) { chain.add(m.id); addDependents(m.id); }
+    });
+  };
+  addDeps(id); addDependents(id);
+  return chain;
+}
+
+export default function GanttApp() {
+  const [view, setView] = useState("gantt");
+  const [search, setSearch] = useState("");
+  const [filterPhase, setFilterPhase] = useState("All");
+  const [hoverIdDesktop, setHoverIdDesktop] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const isMobile = useIsMobile();
+
+  const phases = ["All", ...Object.keys(CATEGORIES)];
+
+  const filtered = useMemo(() => MILESTONES.filter(m => {
+    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
+    const matchPhase = filterPhase === "All" || m.category === filterPhase;
+    return matchSearch && matchPhase;
+  }), [search, filterPhase]);
+
+  const highlightId = hoverIdDesktop || selectedId;
+  const chain = useMemo(() => buildChain(highlightId), [highlightId]);
+  const selectedMilestone = selectedId ? MILESTONES.find(m => m.id === selectedId) : null;
+
+  const handleTap = (id) => {
+    setSelectedId(prev => prev === id ? null : id);
+    if (!isMobile) setHoverIdDesktop(null);
+  };
+
+  return (
+    <div style={{ fontFamily: "'DM Mono','Courier New',monospace", background: "#0a0a0f", minHeight: "100vh", color: "#e2e8f0" }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        borderBottom: "1px solid #1e1e2e", padding: isMobile ? "12px 16px" : "18px 28px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        background: "#0d0d18", position: "sticky", top: 0, zIndex: 50,
+      }}>
+        <div>
+          <div style={{ fontSize: "10px", letterSpacing: "0.15em", color: "#6b7280", textTransform: "uppercase", marginBottom: "2px" }}>Product Roadmap</div>
+          <div style={{ fontSize: isMobile ? "15px" : "18px", fontWeight: "700", color: "#f1f5f9", letterSpacing: "-0.02em" }}>Mar → Sep 2026</div>
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          {isMobile && (
+            <button onClick={() => setShowFilters(f => !f)} style={{
+              background: showFilters ? "#3b3b6b" : "#1a1a2e", border: "1px solid #2d2d4e",
+              borderRadius: "6px", padding: "6px 11px", color: showFilters ? "#a78bfa" : "#6b7280",
+              cursor: "pointer", fontSize: "11px", fontFamily: "inherit",
+            }}>⚙︎</button>
+          )}
+          <div style={{ display: "flex", background: "#1a1a2e", borderRadius: "6px", padding: "2px", border: "1px solid #2d2d4e" }}>
+            {[["gantt", "Timeline"], ["deps", isMobile ? "Deps" : "Dep Map"]].map(([v, label]) => (
+              <button key={v} onClick={() => setView(v)} style={{
+                padding: isMobile ? "5px 9px" : "5px 14px", borderRadius: "4px", border: "none",
+                cursor: "pointer", fontSize: "11px", fontFamily: "inherit",
+                fontWeight: v === view ? "700" : "400",
+                background: v === view ? "#3b3b6b" : "transparent",
+                color: v === view ? "#a78bfa" : "#6b7280",
+              }}>{label}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Filters ── */}
+      {(!isMobile || showFilters) && (
+        <div style={{
+          padding: isMobile ? "12px 16px" : "12px 28px",
+          borderBottom: "1px solid #1e1e2e", background: "#0d0d18",
+        }}>
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search milestones..."
+            style={{
+              background: "#1a1a2e", border: "1px solid #2d2d4e", borderRadius: "5px",
+              padding: "8px 12px", color: "#e2e8f0", fontSize: "12px", fontFamily: "inherit",
+              outline: "none", width: "100%", boxSizing: "border-box", marginBottom: "10px",
+            }}
+          />
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {phases.map(p => (
+              <button key={p} onClick={() => { setFilterPhase(p); if (isMobile) setShowFilters(false); }} style={{
+                padding: "5px 10px", borderRadius: "4px",
+                border: `1px solid ${filterPhase === p ? (CATEGORIES[p] || "#a78bfa") : "#2d2d4e"}`,
+                background: filterPhase === p ? `${CATEGORIES[p] || "#a78bfa"}22` : "transparent",
+                color: filterPhase === p ? (CATEGORIES[p] || "#a78bfa") : "#6b7280",
+                fontSize: "10px", cursor: "pointer", fontFamily: "inherit", letterSpacing: "0.04em",
+              }}>{p}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Main ── */}
+      <div style={{ padding: isMobile ? "14px 16px" : "20px 28px", overflowX: "auto" }}>
+        {view === "gantt" ? (
+          <GanttView milestones={filtered} chain={chain} highlightId={highlightId} isMobile={isMobile}
+            onHover={id => { if (!isMobile) setHoverIdDesktop(id); }}
+            onTap={handleTap} selectedId={selectedId} />
+        ) : (
+          <DepsView milestones={filtered} chain={chain} highlightId={highlightId} isMobile={isMobile}
+            onHover={id => { if (!isMobile) setHoverIdDesktop(id); }}
+            onTap={handleTap} selectedId={selectedId} />
+        )}
+      </div>
+
+      {/* ── Detail: side panel (desktop) or bottom sheet (mobile) ── */}
+      {selectedMilestone && (
+        isMobile
+          ? <BottomSheet milestone={selectedMilestone} onClose={() => setSelectedId(null)} onNavigate={handleTap} />
+          : <SidePanel   milestone={selectedMilestone} onClose={() => setSelectedId(null)} onNavigate={handleTap} />
+      )}
+    </div>
+  );
+}
+
+// ── Gantt View ─────────────────────────────────────────────────────────────────
+
+function GanttView({ milestones, chain, highlightId, isMobile, onHover, onTap, selectedId }) {
+  const LABEL_W = isMobile ? 108 : 200;
+  const monthGroups = MONTHS.map(month => ({ month, items: milestones.filter(m => m.month === month) })).filter(g => g.items.length > 0);
+  const monthOffsets = MONTHS.map(m => ((MONTH_STARTS[m] - PROJECT_START) / (PROJECT_END - PROJECT_START)) * 100);
+
+  return (
+    <div>
+      {/* Month header row */}
+      <div style={{ position: "relative", height: "22px", marginBottom: "6px", marginLeft: LABEL_W + 8 }}>
+        {MONTHS.map((month, i) => (
+          <div key={month} style={{
+            position: "absolute", left: `${monthOffsets[i]}%`,
+            fontSize: isMobile ? "8px" : "9px", letterSpacing: "0.1em",
+            textTransform: "uppercase", color: "#374151", whiteSpace: "nowrap",
+          }}>{month.split(" ")[0]}</div>
+        ))}
+      </div>
+
+      {monthGroups.map(({ month, items }) => (
+        <div key={month} style={{ marginBottom: isMobile ? "14px" : "18px" }}>
+          <div style={{ fontSize: "9px", letterSpacing: "0.15em", textTransform: "uppercase", color: "#2d3748", marginBottom: "4px", fontWeight: "700", borderLeft: "2px solid #1e1e2e", paddingLeft: "4px" }}>
+            {month}
+          </div>
+          {items.map(m => {
+            const inChain = highlightId ? chain.has(m.id) : true;
+            const isSelected = m.id === selectedId;
+            const color = CATEGORIES[m.category];
+            const x = pct(m.date);
+            const diamondSize = isSelected ? (isMobile ? 14 : 12) : (isMobile ? 11 : 9);
+
+            return (
+              <div key={m.id}
+                onMouseEnter={() => onHover(m.id)}
+                onMouseLeave={() => onHover(null)}
+                onClick={() => onTap(m.id)}
+                style={{
+                  display: "flex", alignItems: "center",
+                  marginBottom: isMobile ? "3px" : "2px",
+                  cursor: "pointer",
+                  opacity: highlightId && !inChain ? 0.12 : 1,
+                  transition: "opacity 0.15s",
+                  minHeight: isMobile ? "30px" : "24px",
+                }}
+              >
+                <div style={{
+                  width: LABEL_W, flexShrink: 0, fontSize: isMobile ? "9px" : "10px",
+                  color: isSelected ? color : (inChain && highlightId) ? "#e2e8f0" : "#6b7280",
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  paddingRight: "8px", fontWeight: isSelected ? "700" : "400",
+                }}>{m.name}</div>
+
+                <div style={{ flex: 1, position: "relative", height: isMobile ? "30px" : "22px" }}>
+                  {MONTHS.map((mo, i) => (
+                    <div key={mo} style={{ position: "absolute", left: `${monthOffsets[i]}%`, top: 0, bottom: 0, width: "1px", background: "#161625" }} />
+                  ))}
+                  <div style={{
+                    position: "absolute", left: `${x}%`, top: "50%",
+                    transform: "translate(-50%, -50%) rotate(45deg)",
+                    width: diamondSize, height: diamondSize,
+                    background: isSelected ? color : `${color}cc`,
+                    boxShadow: isSelected ? `0 0 10px ${color}88` : "none",
+                    transition: "all 0.15s", zIndex: 2, flexShrink: 0,
+                  }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "20px", paddingTop: "14px", borderTop: "1px solid #1e1e2e" }}>
+        {Object.entries(CATEGORIES).map(([cat, color]) => (
+          <div key={cat} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+            <div style={{ width: "7px", height: "7px", background: color, transform: "rotate(45deg)", flexShrink: 0 }} />
+            <span style={{ fontSize: "9px", color: "#4b5563" }}>{cat}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Deps View ──────────────────────────────────────────────────────────────────
+
+function DepsView({ milestones, chain, highlightId, isMobile, onHover, onTap, selectedId }) {
+  const filteredIds = new Set(milestones.map(m => m.id));
+  const sorted = [...milestones].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const weeks = {};
+  sorted.forEach(m => {
+    const wk = Math.floor((new Date(m.date) - PROJECT_START) / (7 * 86400000));
+    if (!weeks[wk]) weeks[wk] = [];
+    weeks[wk].push(m);
+  });
+
+  const COLS = Object.keys(weeks).sort((a, b) => a - b);
+  const NODE_W = isMobile ? 110 : 130;
+  const NODE_H = isMobile ? 36 : 38;
+  const COL_GAP = isMobile ? 128 : 158;
+  const ROW_GAP = isMobile ? 48 : 50;
+
+  const positions = {};
+  COLS.forEach((col, ci) => {
+    weeks[col].forEach((m, ri) => {
+      positions[m.id] = { x: ci * COL_GAP + 10, y: ri * ROW_GAP + 10 };
+    });
+  });
+
+  const totalW = COLS.length * COL_GAP + NODE_W + 20;
+  const totalH = Math.max(...Object.values(positions).map(p => p.y), 0) + NODE_H + 20;
+
+  return (
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <svg width={totalW} height={totalH} style={{ display: "block", touchAction: "pan-x pan-y" }}>
+        <defs>
+          <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6z" fill="#2d2d4e"/></marker>
+          <marker id="arrA" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6z" fill="#a78bfa"/></marker>
+        </defs>
+
+        {milestones.map(m => m.blockedBy.map(depId => {
+          if (!filteredIds.has(depId)) return null;
+          const from = positions[depId], to = positions[m.id];
+          if (!from || !to) return null;
+          const isActive = highlightId ? (chain.has(m.id) && chain.has(depId)) : false;
+          const x1 = from.x + NODE_W, y1 = from.y + NODE_H / 2;
+          const x2 = to.x, y2 = to.y + NODE_H / 2;
+          const cx = (x1 + x2) / 2;
+          return (
+            <path key={`${depId}-${m.id}`}
+              d={`M${x1} ${y1} C${cx} ${y1} ${cx} ${y2} ${x2} ${y2}`}
+              fill="none" stroke={isActive ? "#a78bfa" : "#1e1e2e"}
+              strokeWidth={isActive ? 1.5 : 1}
+              markerEnd={isActive ? "url(#arrA)" : "url(#arr)"}
+              opacity={highlightId && !isActive ? 0.12 : 1}
+            />
+          );
+        }))}
+
+        {milestones.map(m => {
+          const pos = positions[m.id];
+          if (!pos) return null;
+          const color = CATEGORIES[m.category];
+          const inChain = highlightId ? chain.has(m.id) : true;
+          const isSelected = m.id === selectedId;
+          return (
+            <g key={m.id} transform={`translate(${pos.x},${pos.y})`}
+              onMouseEnter={() => onHover(m.id)} onMouseLeave={() => onHover(null)}
+              onClick={() => onTap(m.id)} style={{ cursor: "pointer" }}>
+              <rect width={NODE_W} height={NODE_H} rx="4"
+                fill={isSelected ? `${color}22` : "#0d0d18"}
+                stroke={isSelected ? color : highlightId && !inChain ? "#131320" : "#2d2d4e"}
+                strokeWidth={isSelected ? 1.5 : 1}
+                opacity={highlightId && !inChain ? 0.2 : 1}
+              />
+              <rect width="3" height={NODE_H} rx="2" fill={color} opacity={inChain || !highlightId ? 1 : 0.15}/>
+              <text x="10" y={isMobile ? 14 : 15} fill={inChain || !highlightId ? "#e2e8f0" : "#2d3748"}
+                fontSize={isMobile ? 8 : 9} fontFamily="DM Mono,monospace" fontWeight={isSelected ? "700" : "400"}>
+                {m.name.length > (isMobile ? 14 : 17) ? m.name.slice(0, isMobile ? 13 : 16) + "…" : m.name}
+              </text>
+              <text x="10" y={isMobile ? 26 : 28} fill={color} fontSize={isMobile ? 7 : 8} fontFamily="DM Mono,monospace" opacity="0.75">
+                {m.category.length > (isMobile ? 16 : 19) ? m.category.slice(0, isMobile ? 15 : 18) + "…" : m.category}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ── Detail Panel (desktop sidebar) ────────────────────────────────────────────
+
+function SidePanel({ milestone, onClose, onNavigate }) {
+  return (
+    <div style={{
+      position: "fixed", top: 0, right: 0, bottom: 0, width: "280px",
+      borderLeft: "1px solid #1e1e2e", padding: "20px",
+      background: "#0d0d18", overflowY: "auto", zIndex: 100,
+    }}>
+      <Detail milestone={milestone} onClose={onClose} onNavigate={onNavigate} />
+    </div>
+  );
+}
+
+// ── Bottom Sheet (mobile) ──────────────────────────────────────────────────────
+
+function BottomSheet({ milestone, onClose, onNavigate }) {
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#00000077", zIndex: 90 }} />
+      <div style={{
+        position: "fixed", left: 0, right: 0, bottom: 0,
+        background: "#0d0d18", borderTop: "1px solid #2d2d4e",
+        borderRadius: "14px 14px 0 0", padding: "16px 20px 40px",
+        zIndex: 100, maxHeight: "78vh", overflowY: "auto",
+      }}>
+        <div style={{ width: "36px", height: "3px", background: "#2d2d4e", borderRadius: "2px", margin: "0 auto 16px" }} />
+        <Detail milestone={milestone} onClose={onClose} onNavigate={onNavigate} />
+      </div>
+    </>
+  );
+}
+
+// ── Shared Detail Content ─────────────────────────────────────────────────────
+
+function Detail({ milestone, onClose, onNavigate }) {
+  const color = CATEGORIES[milestone.category];
+  const blockedByMs = milestone.blockedBy.map(id => MILESTONES.find(m => m.id === id)).filter(Boolean);
+  const unlocks = MILESTONES.filter(m => m.blockedBy.includes(milestone.id));
+
+  return (
+    <>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+        <div style={{ fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase", color, fontWeight: "700" }}>{milestone.category}</div>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: "18px", padding: "0", lineHeight: 1 }}>✕</button>
+      </div>
+      <div style={{ fontSize: "15px", fontWeight: "700", color: "#f1f5f9", marginBottom: "5px", lineHeight: "1.4" }}>{milestone.name}</div>
+      <div style={{ fontSize: "11px", color: "#6b7280", marginBottom: "12px" }}>
+        {new Date(milestone.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+      </div>
+      <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: "1.8", marginBottom: "16px" }}>{milestone.description}</div>
+
+      {blockedByMs.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div style={{ fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b7280", marginBottom: "7px" }}>Blocked By</div>
+          {blockedByMs.map(dep => (
+            <div key={dep.id} onClick={() => onNavigate(dep.id)} style={{
+              padding: "8px 10px", marginBottom: "4px", background: "#1a1a2e", borderRadius: "5px",
+              fontSize: "11px", color: "#a78bfa", cursor: "pointer",
+              borderLeft: `2px solid ${CATEGORIES[dep.category]}`,
+            }}>{dep.name}</div>
+          ))}
+        </div>
+      )}
+
+      {unlocks.length > 0 && (
+        <div>
+          <div style={{ fontSize: "9px", letterSpacing: "0.1em", textTransform: "uppercase", color: "#6b7280", marginBottom: "7px" }}>Unlocks</div>
+          {unlocks.map(m => (
+            <div key={m.id} onClick={() => onNavigate(m.id)} style={{
+              padding: "8px 10px", marginBottom: "4px", background: "#1a1a2e", borderRadius: "5px",
+              fontSize: "11px", color: "#6ee7b7", cursor: "pointer",
+              borderLeft: `2px solid ${CATEGORIES[m.category]}`,
+            }}>{m.name}</div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}  // September
   { id: "m51", date: "2026-09-02", name: "Quality & Returns Postmortem", category: "Retrospective", month: "September 2026", description: "Why defects/returns happened and why QC missed them.", blockedBy: ["m50"] },
   { id: "m52", date: "2026-09-07", name: "Action Register + Owners + Dates", category: "Retrospective", month: "September 2026", description: "Top 10 actions assigned with dates and metrics.", blockedBy: ["m51", "m50"] },
 ];
