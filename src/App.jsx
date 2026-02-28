@@ -409,7 +409,7 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
                     <div style={{position:"absolute",left:`${x}%`,top:"50%",transform:"translate(-50%,-50%) rotate(45deg)",width:sz,height:sz,background:isSel?color:`${color}cc`,boxShadow:isSel?`0 0 16px 4px ${color}77,0 0 5px 1px ${color}`:(isHov?`0 0 9px 2px ${color}55`:"none"),transition:"all 0.15s",zIndex:2}}/>
                     {(isHov||isSel||(selectedId&&inDirect&&!isSel))&&(
                       <div style={{position:"absolute",left:`calc(${x}% + ${sz/2+7}px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:"#94a3b8",whiteSpace:"nowrap",pointerEvents:"none",background:"#0a0a0f",padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":"#2d2d4e"}`,zIndex:3}}>
-                        {fmtDate(m.date)}
+                        {m.startDate&&m.startDate!==m.date?`${fmtDate(m.startDate)} – ${fmtDate(m.date)}`:fmtDate(m.date)}
                       </div>
                     )}
                   </div>
@@ -531,9 +531,11 @@ function GanttDepLines({lines,milestones,rowRefs,containerRef,LABEL_W,ROW_H,hove
 // ── Gantt Bar View ─────────────────────────────────────────────────────────────
 function GanttBarView({milestones,allMilestones,categories,chain,directChain,selectedId,hoverId,isMobile,onHover,onTap,onBgClick}){
   const LABEL_W=isMobile?130:220;
-  const ROW_H=isMobile?36:32;
+  const ROW_H=isMobile?36:34;
   const BAR_H=isMobile?14:16;
-  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMilestoneMonth(m)===month)})).filter(g=>g.items.length>0);
+  // Group by start date month (fall back to deadline month)
+  const getGroupMonth=(m)=>getMilestoneMonth({...m,date:m.startDate||m.date});
+  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getGroupMonth(m)===month)})).filter(g=>g.items.length>0);
   const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
   const highlightId=selectedId||hoverId;
   const containerRef=useRef(null);
@@ -587,13 +589,12 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
               const isSel=m.id===selectedId;
               const isHov=m.id===hoverId;
               const color=categories[m.category]||FB;
-              // Use startDate and deadline for bars; fall back to date for both if missing
               const startD=m.startDate||m.date;
-              const endD=m.deadline||m.date;
+              const endD=m.date; // deadline
               const xStart=pct(startD);
-              const xEnd=pct(endD);
-              const barW=Math.max(xEnd-xStart,0.5); // min width so single-date items show
-              const barMidPct=xStart+barW/2;
+              const xEnd=endD?pct(endD):xStart;
+              const barW=Math.max(xEnd-xStart,0.4);
+              const hasRange=startD&&endD&&startD!==endD;
               return(
                 <div key={m.id}
                   ref={el=>{if(el)rowRefs.current[m.id]=el;}}
@@ -610,7 +611,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
                     onMouseLeave={selectedId?e=>{e.stopPropagation();onHover(null);}:undefined}
                     style={{flex:1,position:"relative",height:`${ROW_H}px`}}>
                     {MONTHS.map((mo,i)=><div key={mo} style={{position:"absolute",left:`${monthOffsets[i]}%`,top:0,bottom:0,width:"1px",background:"#161625"}}/>)}
-                    {/* The horizontal bar */}
+                    {/* Bar */}
                     <div style={{
                       position:"absolute",
                       left:`${xStart}%`,
@@ -618,17 +619,18 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
                       top:"50%",
                       transform:"translateY(-50%)",
                       height:BAR_H,
-                      background:isSel?color:`${color}bb`,
+                      background:isSel?color:`${color}99`,
                       borderRadius:"3px",
-                      boxShadow:isSel?`0 0 12px 3px ${color}55`:(isHov?`0 0 8px 2px ${color}44`:"none"),
+                      boxShadow:isSel?`0 0 14px 3px ${color}55`:(isHov?`0 0 8px 2px ${color}44`:"none"),
                       transition:"all 0.15s",
                       zIndex:2,
-                      minWidth:"4px"
+                      minWidth:"6px",
+                      border:`1px solid ${color}`,
                     }}/>
-                    {/* Date labels on hover/select or when in directChain with something selected */}
+                    {/* Date label */}
                     {(isHov||isSel||(selectedId&&inDirect&&!isSel))&&(
-                      <div style={{position:"absolute",left:`calc(${xEnd}% + 6px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:"#94a3b8",whiteSpace:"nowrap",pointerEvents:"none",background:"#0a0a0f",padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":"#2d2d4e"}`,zIndex:3}}>
-                        {startD!==endD?`${fmtDate(startD)} – ${fmtDate(endD)}`:fmtDate(startD)}
+                      <div style={{position:"absolute",left:`calc(${xEnd}% + 8px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:"#94a3b8",whiteSpace:"nowrap",pointerEvents:"none",background:"#0a0a0f",padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":"#2d2d4e"}`,zIndex:3}}>
+                        {hasRange?`${fmtDate(startD)} – ${fmtDate(endD)}`:fmtDate(endD||startD)}
                       </div>
                     )}
                   </div>
@@ -637,6 +639,80 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
             })}
           </div>
         ))}
+      </div>
+
+      {/* Legend */}
+      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"16px",paddingTop:"12px",borderTop:"1px solid #1e1e2e"}}>
+        {Object.entries(categories).map(([cat,color])=>(
+          <div key={cat} style={{display:"flex",alignItems:"center",gap:"5px"}}>
+            <div style={{width:"16px",height:"6px",background:color,borderRadius:"2px",flexShrink:0}}/>
+            <span style={{fontSize:"11px",color:"#4b5563"}}>{cat}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Line label tooltip */}
+      {(hoveredLine||selectedLine)&&(()=>{
+        const line=selectedLine||hoveredLine;
+        const fromM=milestones.find(x=>x.id===line.fromId);
+        const toM=milestones.find(x=>x.id===line.toId);
+        if(!fromM||!toM)return null;
+        const label=line.type==="blockedBy"?`${toM.name} blocked by ${fromM.name}`:`${fromM.name} unlocks ${toM.name}`;
+        const col=line.type==="blockedBy"?DEP_RED:DEP_GREEN;
+        return(
+          <div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:"#0d0d18",border:`1px solid ${col}66`,borderRadius:"6px",padding:"8px 16px",fontSize:"12px",color:col,zIndex:200,pointerEvents:"none",maxWidth:"80vw",textAlign:"center",boxShadow:`0 0 20px ${col}33`}}>
+            {label}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+  const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
+  const highlightId=selectedId||hoverId;
+  const containerRef=useRef(null);
+  const rowRefs=useRef({});
+
+  const activeId=highlightId;
+  const depLines=useMemo(()=>{
+    if(!activeId)return[];
+    const m=milestones.find(x=>x.id===activeId);
+    if(!m)return[];
+    const filteredIds=new Set(milestones.map(x=>x.id));
+    const lines=[];
+    (m.blockedBy||[]).forEach(depId=>{
+      if(filteredIds.has(depId))lines.push({fromId:depId,toId:activeId,type:"blockedBy"});
+    });
+    milestones.forEach(x=>{
+      if((x.blockedBy||[]).includes(activeId)&&filteredIds.has(x.id))
+        lines.push({fromId:activeId,toId:x.id,type:"unlocks"});
+    });
+    return lines;
+  },[activeId,milestones]);
+
+  const [hoveredLine,setHoveredLine]=useState(null);
+  const [selectedLine,setSelectedLine]=useState(null);
+  useEffect(()=>{setSelectedLine(null);},[activeId]);
+
+  return(
+    <div style={{height:"100%",overflowY:"auto",overflowX:"hidden",padding:isMobile?"12px 16px 80px":"16px 28px 80px",position:"relative"}} onClick={e=>{e.stopPropagation();onBgClick();}}>
+      {/* Month headers */}
+      <div style={{position:"sticky",top:0,background:"#0a0a0f",zIndex:10,paddingBottom:"4px"}}>
+        <div style={{position:"relative",height:"22px",marginLeft:LABEL_W+8}}>
+          {MONTHS.map((month,i)=>(
+            <div key={month} style={{position:"absolute",left:`${monthOffsets[i]}%`,fontSize:isMobile?"10px":"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:"#374151",whiteSpace:"nowrap"}}>
+              {month.split(" ")[0]}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Chart area */}
+      <div ref={containerRef} style={{position:"relative"}}>
+        {depLines.length>0&&(
+          <GanttBarDepLines lines={depLines} milestones={milestones} rowRefs={rowRefs} containerRef={containerRef} LABEL_W={LABEL_W} ROW_H={ROW_H} hoveredLine={hoveredLine} setHoveredLine={setHoveredLine} selectedLine={selectedLine} setSelectedLine={setSelectedLine}/>
+        )}
+
       </div>
 
       {/* Legend */}
@@ -972,7 +1048,7 @@ function Detail({milestone,allMilestones,categories,settings,onToggleSetting,onC
       <PanelSettingsBar settings={settings} onToggle={onToggleSetting}/>
 
       <div style={{display:"flex",flexWrap:"wrap",marginBottom:"10px"}}>
-        {settings.showDate&&milestone.date&&<Chip label={fmtDateLong(milestone.date)} col="#6b7280"/>}
+        {settings.showDate&&milestone.date&&<Chip label={milestone.startDate&&milestone.startDate!==milestone.date?`${fmtDate(milestone.startDate)} – ${fmtDateLong(milestone.date)}`:fmtDateLong(milestone.date)} col="#6b7280"/>}
         {settings.showPriority&&milestone.priority&&<Chip label={milestone.priority} col={priColor}/>}
         {settings.showStatus&&milestone.status&&<Chip label={milestone.status} col={statColor}/>}
         {settings.showComplexity&&milestone.effort!=null&&<Chip label={`Complexity: ${milestone.effort}`} col="#4b5563"/>}
