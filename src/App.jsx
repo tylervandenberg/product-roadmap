@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, createContext, useContext } from "react";
 import { loadFromNotion, updateTask, updateDependencies, updateLinkedPhase } from "./notion.js";
 
 const PRIORITIES = { High:"#ef4444", Medium:"#f59e0b", Low:"#6b7280" };
@@ -11,14 +11,40 @@ const FB = "#6b7280";
 const SETTINGS_KEY = "roadmap_panel_filters_v2";
 const DEP_RED   = "#ef4444";
 const DEP_GREEN = "#22c55e";
-
 const LAUNCH_READINESS_COLOR = "#f59e0b";
 
-function getCategoryColor(cat, categories){
-  const c = categories[cat];
-  if(cat === "Launch Readiness" && (!c || c === "#6b7280" || c === FB)) return LAUNCH_READINESS_COLOR;
-  return c || FB;
-}
+// ── Theme definitions ──────────────────────────────────────────────────────────
+const DARK_THEME = {
+  bg:"#0a0a0f", bgHeader:"#0d0d18", bgCard:"#0d0d18", bgInput:"#1a1a2e",
+  bgElevated:"#1a1a2e", bgHighlight:"#131320",
+  border:"#1e1e2e", borderMid:"#2d2d4e", borderStrong:"#3b3b6b",
+  text:"#e2e8f0", textMuted:"#6b7280", textDim:"#4b5563", textStrong:"#f1f5f9",
+  textSecondary:"#94a3b8", textBody:"#cbd5e1",
+  monthHeader:"#8892a4", monthGroup:"#6b7a8d",
+  monthLine:"#161625",
+  accent:"#a78bfa", accentBg:"#3b3b6b",
+  notesBar:"#a78bfa", notesBg:"#1a1a2e",
+  dimOpacity:0.35,
+};
+const LIGHT_THEME = {
+  bg:"#f8f9fc", bgHeader:"#ffffff", bgCard:"#ffffff", bgInput:"#f1f3f7",
+  bgElevated:"#f1f3f7", bgHighlight:"#e8eaf0",
+  border:"#e2e5ed", borderMid:"#c8cdd8", borderStrong:"#9fa6b8",
+  text:"#1a1d2e", textMuted:"#5a6480", textDim:"#7a859a", textStrong:"#0d1017",
+  textSecondary:"#4a5568", textBody:"#2d3748",
+  monthHeader:"#3d4a6a", monthGroup:"#4a5880",
+  monthLine:"#dde2ec",
+  accent:"#6d48e5", accentBg:"#ede9fb",
+  notesBar:"#6d48e5", notesBg:"#f0edfb",
+  dimOpacity:0.3,
+};
+
+const ThemeCtx = createContext(DARK_THEME);
+const useTheme = () => useContext(ThemeCtx);
+
+const FONT_MONO = "'DM Mono','Courier New',monospace";
+const FONT_SANS = "'Inter','Segoe UI','Helvetica Neue',sans-serif";
+
 function pct(d){return((new Date(d)-PROJECT_START)/(PROJECT_END-PROJECT_START))*100;}
 function fmtDate(d){if(!d)return"";return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});}
 function fmtDateLong(d){if(!d)return"No date";return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});}
@@ -47,10 +73,31 @@ function buildChain(id,milestones){
 function loadSettings(){try{return JSON.parse(localStorage.getItem(SETTINGS_KEY)||"{}");}catch{return{};}}
 function saveSettings(s){try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(s));}catch{}}
 
+function getMonthLabel(dateStr){
+  if(!dateStr)return null;
+  return new Date(dateStr+"T12:00:00").toLocaleDateString("en-US",{month:"long",year:"numeric"});
+}
+function getMilestoneMonth(m){return m.month||getMonthLabel(m.date)||"";}
+
+// ── Toggle button ──────────────────────────────────────────────────────────────
+function ToggleBtn({on,onLabel,offLabel,onClick,theme}){
+  return(
+    <button onClick={onClick} style={{
+      background:on?theme.accentBg:theme.bgElevated,
+      border:`1px solid ${on?theme.accent:theme.borderMid}`,
+      borderRadius:"6px",padding:"5px 11px",
+      color:on?theme.accent:theme.textMuted,
+      cursor:"pointer",fontSize:"12px",
+      fontFamily:"inherit",whiteSpace:"nowrap",
+      transition:"all 0.15s",
+    }}>{on?onLabel:offLabel}</button>
+  );
+}
+
 // ── Loading Screen ─────────────────────────────────────────────────────────────
 function LoadingScreen({error,onRetry}){
   return(
-    <div style={{fontFamily:"'DM Mono','Courier New',monospace",background:"#0a0a0f",minHeight:"100vh",color:"#e2e8f0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"16px"}}>
+    <div style={{fontFamily:FONT_MONO,background:"#0a0a0f",minHeight:"100vh",color:"#e2e8f0",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"16px"}}>
       {error?(
         <>
           <div style={{fontSize:"13px",color:"#ef4444",maxWidth:"400px",textAlign:"center",lineHeight:"1.8",background:"#1a0a0a",border:"1px solid #ef444444",borderRadius:"8px",padding:"20px"}}>
@@ -86,12 +133,16 @@ export default function GanttApp(){
   const [selectedId,setSelectedId]=useState(null);
   const [selectedEdge,setSelectedEdge]=useState(null);
   const [panelOpen,setPanelOpen]=useState(false);
+  const [darkMode,setDarkMode]=useState(true);
+  const [monoFont,setMonoFont]=useState(true);
   const [panelSettings,setPanelSettings]=useState(()=>({
     showDate:true,showPriority:true,showStatus:true,showOwner:true,
     showComplexity:true,showNotes:true,showBlockedBy:true,showUnlocks:true,
     ...loadSettings()
   }));
   const isMobile=useIsMobile();
+  const theme=darkMode?DARK_THEME:LIGHT_THEME;
+  const font=monoFont?FONT_MONO:FONT_SANS;
 
   useEffect(()=>{saveSettings(panelSettings);},[panelSettings]);
 
@@ -111,7 +162,6 @@ export default function GanttApp(){
 
   useEffect(()=>{loadData();},[loadData]);
   useEffect(()=>{setSelectedId(null);setSelectedEdge(null);setPanelOpen(false);},[filterPhase]);
-
   useEffect(()=>{
     const h=(e)=>{if(e.key===" "){e.preventDefault();setSelectedId(null);setSelectedEdge(null);setPanelOpen(false);}};
     window.addEventListener("keydown",h);
@@ -160,63 +210,70 @@ export default function GanttApp(){
   const showPanel=panelOpen&&selectedMilestone;
 
   return(
-    <div style={{fontFamily:"'DM Mono','Courier New',monospace",background:"#0a0a0f",height:"100vh",color:"#e2e8f0",display:"flex",flexDirection:"column",overflow:"hidden"}} onClick={handleBgClick}>
+    <ThemeCtx.Provider value={theme}>
+      <div style={{fontFamily:font,background:theme.bg,height:"100vh",color:theme.text,display:"flex",flexDirection:"column",overflow:"hidden",transition:"background 0.2s,color 0.2s"}} onClick={handleBgClick}>
 
-      {/* Header */}
-      <div style={{borderBottom:"1px solid #1e1e2e",padding:isMobile?"12px 16px":"16px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",background:"#0d0d18",flexShrink:0,zIndex:50}} onClick={e=>e.stopPropagation()}>
-        <div>
-          <div style={{fontSize:"11px",letterSpacing:"0.15em",color:"#6b7280",textTransform:"uppercase",marginBottom:"2px"}}>Product Roadmap</div>
-          <div style={{fontSize:isMobile?"17px":"20px",fontWeight:"700",color:"#f1f5f9",letterSpacing:"-0.02em",display:"flex",alignItems:"center",gap:"10px"}}>
-            Mar → Sep 2026
-            {saving&&<span style={{fontSize:"11px",color:"#6b7280",fontWeight:"400"}}>saving…</span>}
+        {/* Header */}
+        <div style={{borderBottom:`1px solid ${theme.border}`,padding:isMobile?"12px 16px":"16px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",background:theme.bgHeader,flexShrink:0,zIndex:50}} onClick={e=>e.stopPropagation()}>
+          <div>
+            <div style={{fontSize:"11px",letterSpacing:"0.15em",color:theme.textMuted,textTransform:"uppercase",marginBottom:"2px"}}>Product Roadmap</div>
+            <div style={{fontSize:isMobile?"17px":"20px",fontWeight:"700",color:theme.textStrong,letterSpacing:"-0.02em",display:"flex",alignItems:"center",gap:"10px"}}>
+              Mar → Sep 2026
+              {saving&&<span style={{fontSize:"11px",color:theme.textMuted,fontWeight:"400"}}>saving…</span>}
+            </div>
           </div>
-        </div>
-        <div style={{display:"flex",gap:"6px",alignItems:"center"}}>
-          <button onClick={loadData} title="Refresh" style={{background:"#1a1a2e",border:"1px solid #2d2d4e",borderRadius:"6px",padding:"6px 11px",color:"#6b7280",cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>↺</button>
-          <div style={{display:"flex",background:"#1a1a2e",borderRadius:"6px",padding:"2px",border:"1px solid #2d2d4e"}}>
-            {[["dashboard","Dashboard"],["gantt","Timeline"],["ganttbar","Gantt"],["deps","Dep Map"]].map(([v,label])=>(
-              <button key={v} onClick={()=>{setView(v);setSelectedId(null);setSelectedEdge(null);setPanelOpen(false);}} style={{padding:isMobile?"5px 9px":"5px 13px",borderRadius:"4px",border:"none",cursor:"pointer",fontSize:isMobile?"11px":"12px",fontFamily:"inherit",fontWeight:v===view?"700":"400",background:v===view?"#3b3b6b":"transparent",color:v===view?"#a78bfa":"#6b7280",whiteSpace:"nowrap"}}>{label}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Filter bar */}
-      {view!=="dashboard"&&(
-        <div style={{padding:isMobile?"10px 16px":"10px 28px",borderBottom:"1px solid #1e1e2e",background:"#0d0d18",flexShrink:0}} onClick={e=>e.stopPropagation()}>
-          <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" style={{background:"#1a1a2e",border:"1px solid #2d2d4e",borderRadius:"4px",color:"#e2e8f0",fontFamily:"inherit",fontSize:"12px",padding:"4px 10px",outline:"none",width:isMobile?"130px":"180px"}}/>
-            <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
-              {phaseNames.map(p=>{
-                const color=categories[p]||"#a78bfa";
-                const active=filterPhase===p;
-                return <button key={p} onClick={()=>setFilterPhase(p)} style={{padding:"4px 9px",borderRadius:"4px",border:`1px solid ${active?(p==="All"?"#a78bfa":color):"#2d2d4e"}`,background:active?`${p==="All"?"#a78bfa":color}22`:"transparent",color:active?(p==="All"?"#a78bfa":color):"#6b7280",fontSize:"11px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{p}</button>;
-              })}
+          <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {/* Font toggle */}
+            <ToggleBtn on={!monoFont} onLabel="Sans" offLabel="Mono" onClick={()=>setMonoFont(v=>!v)} theme={theme}/>
+            {/* Theme toggle */}
+            <ToggleBtn on={!darkMode} onLabel="☀ Light" offLabel="☾ Dark" onClick={()=>setDarkMode(v=>!v)} theme={theme}/>
+            <button onClick={loadData} title="Refresh" style={{background:theme.bgElevated,border:`1px solid ${theme.borderMid}`,borderRadius:"6px",padding:"6px 11px",color:theme.textMuted,cursor:"pointer",fontSize:"13px",fontFamily:"inherit"}}>↺</button>
+            <div style={{display:"flex",background:theme.bgElevated,borderRadius:"6px",padding:"2px",border:`1px solid ${theme.borderMid}`}}>
+              {[["dashboard","Dashboard"],["gantt","Timeline"],["ganttbar","Gantt"],["deps","Dep Map"]].map(([v,label])=>(
+                <button key={v} onClick={()=>{setView(v);setSelectedId(null);setSelectedEdge(null);setPanelOpen(false);}} style={{padding:isMobile?"5px 9px":"5px 13px",borderRadius:"4px",border:"none",cursor:"pointer",fontSize:isMobile?"11px":"12px",fontFamily:"inherit",fontWeight:v===view?"700":"400",background:v===view?theme.accentBg:"transparent",color:v===view?theme.accent:theme.textMuted,whiteSpace:"nowrap",transition:"all 0.15s"}}>{label}</button>
+              ))}
             </div>
           </div>
         </div>
-      )}
 
-      {/* Content */}
-      <div style={{flex:1,overflow:"hidden",position:"relative"}}>
-        {view==="dashboard"&&<DashboardView milestones={milestones} phases={phases} categories={categories} onSelectTask={handleTap} isMobile={isMobile}/>}
-        {view==="gantt"&&<GanttView milestones={filtered} allMilestones={milestones} categories={categories} chain={chain} directChain={directChain} selectedId={selectedId} hoverId={effectiveHover} isMobile={isMobile} onHover={id=>{if(!selectedId)setHoverId(id);}} onTap={handleTap} onBgClick={handleBgClick}/>}
-        {view==="ganttbar"&&<GanttBarView milestones={filtered} allMilestones={milestones} categories={categories} chain={chain} directChain={directChain} selectedId={selectedId} hoverId={effectiveHover} isMobile={isMobile} onHover={id=>{if(!selectedId)setHoverId(id);}} onTap={handleTap} onBgClick={handleBgClick}/>}
-        {view==="deps"&&<DepsView milestones={filtered} categories={categories} chain={chain} highlightId={selectedId||effectiveHover} isMobile={isMobile} onHover={id=>{if(!selectedId)setHoverId(id);}} onTap={handleTap} selectedId={selectedId} selectedEdge={selectedEdge} edgeHighlightSet={edgeHighlightSet} onEdgeTap={handleEdgeTap} onBgClick={handleBgClick}/>}
+        {/* Filter bar */}
+        {view!=="dashboard"&&(
+          <div style={{padding:isMobile?"10px 16px":"10px 28px",borderBottom:`1px solid ${theme.border}`,background:theme.bgHeader,flexShrink:0}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" style={{background:theme.bgInput,border:`1px solid ${theme.borderMid}`,borderRadius:"4px",color:theme.text,fontFamily:"inherit",fontSize:"12px",padding:"4px 10px",outline:"none",width:isMobile?"130px":"180px"}}/>
+              <div style={{display:"flex",gap:"5px",flexWrap:"wrap"}}>
+                {phaseNames.map(p=>{
+                  const color=categories[p]||theme.accent;
+                  const active=filterPhase===p;
+                  return <button key={p} onClick={()=>setFilterPhase(p)} style={{padding:"4px 9px",borderRadius:"4px",border:`1px solid ${active?(p==="All"?theme.accent:color):theme.borderMid}`,background:active?`${p==="All"?theme.accent:color}22`:"transparent",color:active?(p==="All"?theme.accent:color):theme.textMuted,fontSize:"11px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{p}</button>;
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        <div style={{flex:1,overflow:"hidden",position:"relative"}}>
+          {view==="dashboard"&&<DashboardView milestones={milestones} phases={phases} categories={categories} onSelectTask={handleTap} isMobile={isMobile}/>}
+          {view==="gantt"&&<GanttView milestones={filtered} allMilestones={milestones} categories={categories} chain={chain} directChain={directChain} selectedId={selectedId} hoverId={effectiveHover} isMobile={isMobile} onHover={id=>{if(!selectedId)setHoverId(id);}} onTap={handleTap} onBgClick={handleBgClick}/>}
+          {view==="ganttbar"&&<GanttBarView milestones={filtered} allMilestones={milestones} categories={categories} chain={chain} directChain={directChain} selectedId={selectedId} hoverId={effectiveHover} isMobile={isMobile} onHover={id=>{if(!selectedId)setHoverId(id);}} onTap={handleTap} onBgClick={handleBgClick}/>}
+          {view==="deps"&&<DepsView milestones={filtered} categories={categories} chain={chain} highlightId={selectedId||effectiveHover} isMobile={isMobile} onHover={id=>{if(!selectedId)setHoverId(id);}} onTap={handleTap} selectedId={selectedId} selectedEdge={selectedEdge} edgeHighlightSet={edgeHighlightSet} onEdgeTap={handleEdgeTap} onBgClick={handleBgClick}/>}
+        </div>
+
+        {/* Detail panel */}
+        {showPanel&&(
+          isMobile
+            ?<BottomSheet milestone={selectedMilestone} allMilestones={milestones} categories={categories} settings={panelSettings} onToggleSetting={togglePanelSetting} onClose={handleClosePanel} onNavigate={handleTap}/>
+            :<SidePanel milestone={selectedMilestone} allMilestones={milestones} categories={categories} settings={panelSettings} onToggleSetting={togglePanelSetting} onClose={handleClosePanel} onNavigate={handleTap}/>
+        )}
       </div>
-
-      {/* Detail panel */}
-      {showPanel&&(
-        isMobile
-          ?<BottomSheet milestone={selectedMilestone} allMilestones={milestones} categories={categories} settings={panelSettings} onToggleSetting={togglePanelSetting} onClose={handleClosePanel} onNavigate={handleTap}/>
-          :<SidePanel milestone={selectedMilestone} allMilestones={milestones} categories={categories} settings={panelSettings} onToggleSetting={togglePanelSetting} onClose={handleClosePanel} onNavigate={handleTap}/>
-      )}
-    </div>
+    </ThemeCtx.Provider>
   );
 }
 
 // ── Dashboard View ─────────────────────────────────────────────────────────────
 function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
+  const theme=useTheme();
   const [expandedPhase,setExpandedPhase]=useState(null);
   const readyTasks=useMemo(()=>milestones.filter(m=>isReady(m,milestones)),[milestones]);
   const phaseStats=useMemo(()=>phases.map(phase=>{
@@ -232,21 +289,21 @@ function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
   return(
     <div style={{height:"100%",overflowY:"auto",padding:isMobile?"14px 16px 80px":"20px 28px 80px"}} onClick={e=>e.stopPropagation()}>
       <div style={{marginBottom:"26px"}}>
-        <div style={{fontSize:"12px",letterSpacing:"0.15em",textTransform:"uppercase",color:"#6b7280",marginBottom:"12px",fontWeight:"700"}}>Ready to Work On</div>
+        <div style={{fontSize:"12px",letterSpacing:"0.15em",textTransform:"uppercase",color:theme.textMuted,marginBottom:"12px",fontWeight:"700"}}>Ready to Work On</div>
         {readyTasks.length===0
-          ?<div style={{fontSize:"13px",color:"#4b5563",padding:"18px",background:"#0d0d18",borderRadius:"8px",textAlign:"center"}}>No tasks ready right now</div>
+          ?<div style={{fontSize:"13px",color:theme.textDim,padding:"18px",background:theme.bgCard,borderRadius:"8px",textAlign:"center",border:`1px solid ${theme.border}`}}>No tasks ready right now</div>
           :<div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(auto-fill,minmax(260px,1fr))",gap:"8px"}}>
             {readyTasks.map(m=>{
               const color=categories[m.category]||FB;
               return(
                 <div key={m.id} onClick={()=>onSelectTask(m.id)}
-                  style={{background:"#0d0d18",border:`1px solid ${color}33`,borderLeft:`3px solid ${color}`,borderRadius:"7px",padding:"12px 14px",cursor:"pointer",transition:"background 0.1s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#131320"}
-                  onMouseLeave={e=>e.currentTarget.style.background="#0d0d18"}>
-                  <div style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0",marginBottom:"5px",lineHeight:"1.4"}}>{m.name}</div>
+                  style={{background:theme.bgCard,border:`1px solid ${color}33`,borderLeft:`3px solid ${color}`,borderRadius:"7px",padding:"12px 14px",cursor:"pointer",transition:"background 0.1s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=theme.bgHighlight}
+                  onMouseLeave={e=>e.currentTarget.style.background=theme.bgCard}>
+                  <div style={{fontSize:"13px",fontWeight:"600",color:theme.textStrong,marginBottom:"5px",lineHeight:"1.4"}}>{m.name}</div>
                   <div style={{display:"flex",gap:"8px",alignItems:"center",flexWrap:"wrap"}}>
                     <span style={{fontSize:"11px",color}}>◆ {m.category}</span>
-                    {m.date&&<span style={{fontSize:"11px",color:"#94a3b8"}}>{fmtDate(m.date)}</span>}
+                    {m.date&&<span style={{fontSize:"11px",color:theme.textSecondary}}>{fmtDate(m.date)}</span>}
                     {m.priority&&m.priority!=="Medium"&&<span style={{fontSize:"11px",color:PRIORITIES[m.priority]||FB}}>{m.priority}</span>}
                   </div>
                 </div>
@@ -257,35 +314,35 @@ function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
       </div>
 
       <div>
-        <div style={{fontSize:"12px",letterSpacing:"0.15em",textTransform:"uppercase",color:"#6b7280",marginBottom:"12px",fontWeight:"700"}}>Phases</div>
+        <div style={{fontSize:"12px",letterSpacing:"0.15em",textTransform:"uppercase",color:theme.textMuted,marginBottom:"12px",fontWeight:"700"}}>Phases</div>
         <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
           {phaseStats.map(phase=>{
             const isExp=expandedPhase===phase.id;
             return(
-              <div key={phase.id} style={{background:"#0d0d18",borderRadius:"8px",border:"1px solid #1e1e2e",overflow:"hidden"}}>
+              <div key={phase.id} style={{background:theme.bgCard,borderRadius:"8px",border:`1px solid ${theme.border}`,overflow:"hidden"}}>
                 <div onClick={()=>setExpandedPhase(isExp?null:phase.id)} style={{padding:"13px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:"12px"}}>
                   <div style={{width:"9px",height:"9px",background:phase.color,borderRadius:"2px",transform:"rotate(45deg)",flexShrink:0}}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"5px"}}>
-                      <span style={{fontSize:"13px",fontWeight:"600",color:"#e2e8f0"}}>{phase.name}</span>
+                      <span style={{fontSize:"13px",fontWeight:"600",color:theme.textStrong}}>{phase.name}</span>
                       <span style={{fontSize:"12px",color:phase.color,fontWeight:"700"}}>{phase.pct}%</span>
                     </div>
-                    <div style={{height:"3px",background:"#1e1e2e",borderRadius:"2px",overflow:"hidden",marginBottom:"5px"}}>
+                    <div style={{height:"3px",background:theme.border,borderRadius:"2px",overflow:"hidden",marginBottom:"5px"}}>
                       <div style={{height:"100%",width:`${phase.pct}%`,background:phase.color,borderRadius:"2px",transition:"width 0.3s"}}/>
                     </div>
                     <div style={{display:"flex",gap:"12px"}}>
-                      <span style={{fontSize:"11px",color:"#4b5563"}}>{phase.done}/{phase.total} done</span>
+                      <span style={{fontSize:"11px",color:theme.textDim}}>{phase.done}/{phase.total} done</span>
                       {phase.inProg>0&&<span style={{fontSize:"11px",color:"#3b82f6"}}>↑ {phase.inProg} active</span>}
                       {phase.ready>0&&<span style={{fontSize:"11px",color:"#10b981"}}>✓ {phase.ready} ready</span>}
                       {phase.blocked>0&&<span style={{fontSize:"11px",color:"#f97316"}}>⚠ {phase.blocked} blocked</span>}
                     </div>
                   </div>
-                  <span style={{fontSize:"11px",color:"#4b5563",flexShrink:0}}>{isExp?"▲":"▼"}</span>
+                  <span style={{fontSize:"11px",color:theme.textDim,flexShrink:0}}>{isExp?"▲":"▼"}</span>
                 </div>
                 {isExp&&(
-                  <div style={{borderTop:"1px solid #1e1e2e",padding:"8px 12px",display:"flex",flexDirection:"column",gap:"2px"}}>
+                  <div style={{borderTop:`1px solid ${theme.border}`,padding:"8px 12px",display:"flex",flexDirection:"column",gap:"2px"}}>
                     {phase.tasks.length===0
-                      ?<div style={{fontSize:"12px",color:"#4b5563",padding:"10px",textAlign:"center"}}>No tasks</div>
+                      ?<div style={{fontSize:"12px",color:theme.textDim,padding:"10px",textAlign:"center"}}>No tasks</div>
                       :phase.tasks.map(m=>{
                         const ready=isReady(m,milestones);
                         const isDone=m.status==="Done";
@@ -294,12 +351,12 @@ function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
                         return(
                           <div key={m.id} onClick={()=>onSelectTask(m.id)}
                             style={{display:"flex",alignItems:"center",gap:"8px",padding:"8px",borderRadius:"5px",cursor:"pointer",opacity:dimmed?0.4:1,transition:"background 0.1s"}}
-                            onMouseEnter={e=>e.currentTarget.style.background="#1a1a2e"}
+                            onMouseEnter={e=>e.currentTarget.style.background=theme.bgHighlight}
                             onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                             <div style={{width:"6px",height:"6px",borderRadius:"50%",background:STATUSES[m.status]||FB,flexShrink:0}}/>
-                            <span style={{flex:1,fontSize:"12px",color:isDone?"#4b5563":"#cbd5e1",textDecoration:isDone?"line-through":"none",lineHeight:"1.4"}}>{m.name}</span>
+                            <span style={{flex:1,fontSize:"12px",color:isDone?theme.textDim:theme.textBody,textDecoration:isDone?"line-through":"none",lineHeight:"1.4"}}>{m.name}</span>
                             <div style={{display:"flex",gap:"5px",flexShrink:0}}>
-                              {m.date&&<span style={{fontSize:"11px",color:"#94a3b8"}}>{fmtDate(m.date)}</span>}
+                              {m.date&&<span style={{fontSize:"11px",color:theme.textSecondary}}>{fmtDate(m.date)}</span>}
                               {m.priority==="High"&&<span style={{fontSize:"11px",color:"#ef4444"}}>!</span>}
                               {isBlocked&&<span style={{fontSize:"11px",color:"#f97316"}}>blocked</span>}
                               {ready&&<span style={{fontSize:"11px",color:"#10b981"}}>ready</span>}
@@ -320,14 +377,8 @@ function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
 }
 
 // ── Gantt (Timeline) View ──────────────────────────────────────────────────────
-function getMonthLabel(dateStr){
-  if(!dateStr)return null;
-  const d=new Date(dateStr+"T12:00:00");
-  return d.toLocaleDateString("en-US",{month:"long",year:"numeric"});
-}
-function getMilestoneMonth(m){return m.month||getMonthLabel(m.date)||"";}
-
 function GanttView({milestones,allMilestones,categories,chain,directChain,selectedId,hoverId,isMobile,onHover,onTap,onBgClick}){
+  const theme=useTheme();
   const LABEL_W=isMobile?130:220;
   const ROW_H=isMobile?32:28;
   const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMilestoneMonth(m)===month)})).filter(g=>g.items.length>0);
@@ -359,10 +410,11 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
 
   return(
     <div style={{height:"100%",overflowY:"auto",overflowX:"hidden",padding:isMobile?"12px 16px 80px":"16px 28px 80px",position:"relative"}} onClick={e=>{e.stopPropagation();onBgClick();}}>
-      <div style={{position:"sticky",top:0,background:"#0a0a0f",zIndex:10,paddingBottom:"4px"}}>
-        <div style={{position:"relative",height:"22px",marginLeft:LABEL_W+8}}>
+      {/* Sticky month header row */}
+      <div style={{position:"sticky",top:0,background:theme.bg,zIndex:10,paddingBottom:"6px",borderBottom:`1px solid ${theme.border}`,marginBottom:"6px"}}>
+        <div style={{position:"relative",height:"24px",marginLeft:LABEL_W+8}}>
           {MONTHS.map((month,i)=>(
-            <div key={month} style={{position:"absolute",left:`${monthOffsets[i]}%`,fontSize:isMobile?"10px":"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:"#374151",whiteSpace:"nowrap"}}>
+            <div key={month} style={{position:"absolute",left:`${monthOffsets[i]}%`,fontSize:isMobile?"11px":"12px",letterSpacing:"0.08em",textTransform:"uppercase",color:theme.monthHeader,fontWeight:"700",whiteSpace:"nowrap"}}>
               {month.split(" ")[0]}
             </div>
           ))}
@@ -376,7 +428,8 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
 
         {monthGroups.map(({month,items})=>(
           <div key={month} style={{marginBottom:isMobile?"14px":"18px"}}>
-            <div style={{fontSize:"10px",letterSpacing:"0.12em",textTransform:"uppercase",color:"#2d3748",marginBottom:"3px",fontWeight:"700",borderLeft:"2px solid #1e1e2e",paddingLeft:"5px"}}>{month}</div>
+            {/* Month group label - left side */}
+            <div style={{fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:theme.monthGroup,marginBottom:"4px",fontWeight:"700",borderLeft:`2px solid ${theme.accent}55`,paddingLeft:"6px"}}>{month}</div>
             {items.map(m=>{
               const inDirect=highlightId?directChain.has(m.id):true;
               const isSel=m.id===selectedId;
@@ -384,25 +437,26 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
               const color=categories[m.category]||FB;
               const x=pct(m.date);
               const sz=isSel?(isMobile?16:14):(isMobile?11:9);
+              const dimmed=highlightId&&!inDirect;
               return(
                 <div key={m.id}
                   ref={el=>{if(el)rowRefs.current[m.id]=el;}}
                   onClick={e=>{e.stopPropagation();onTap(m.id);}}
-                  style={{display:"flex",alignItems:"center",marginBottom:"3px",cursor:"pointer",opacity:highlightId&&!inDirect?0.08:1,transition:"opacity 0.15s",minHeight:`${ROW_H}px`}}>
+                  style={{display:"flex",alignItems:"center",marginBottom:"3px",cursor:"pointer",opacity:dimmed?theme.dimOpacity:1,transition:"opacity 0.15s",minHeight:`${ROW_H}px`}}>
                   <div
                     onMouseEnter={e=>{e.stopPropagation();onHover(m.id);}}
                     onMouseLeave={e=>{e.stopPropagation();onHover(null);}}
-                    style={{width:LABEL_W,flexShrink:0,fontSize:isMobile?"12px":"13px",color:isSel?color:(inDirect&&highlightId)?"#e2e8f0":"#6b7280",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",paddingRight:"10px",fontWeight:isSel?"700":"400"}}>
+                    style={{width:LABEL_W,flexShrink:0,fontSize:isMobile?"12px":"13px",color:isSel?color:(inDirect&&highlightId)?theme.text:theme.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",paddingRight:"10px",fontWeight:isSel?"700":"400"}}>
                     {m.name}
                   </div>
                   <div
                     onMouseEnter={selectedId?e=>{e.stopPropagation();onHover(m.id);}:undefined}
                     onMouseLeave={selectedId?e=>{e.stopPropagation();onHover(null);}:undefined}
                     style={{flex:1,position:"relative",height:`${ROW_H}px`}}>
-                    {MONTHS.map((mo,i)=><div key={mo} style={{position:"absolute",left:`${monthOffsets[i]}%`,top:0,bottom:0,width:"1px",background:"#161625"}}/>)}
+                    {MONTHS.map((mo,i)=><div key={mo} style={{position:"absolute",left:`${monthOffsets[i]}%`,top:0,bottom:0,width:"1px",background:theme.monthLine}}/>)}
                     <div style={{position:"absolute",left:`${x}%`,top:"50%",transform:"translate(-50%,-50%) rotate(45deg)",width:sz,height:sz,background:isSel?color:`${color}cc`,boxShadow:isSel?`0 0 16px 4px ${color}77,0 0 5px 1px ${color}`:(isHov?`0 0 9px 2px ${color}55`:"none"),transition:"all 0.15s",zIndex:2}}/>
                     {(isHov||isSel||(selectedId&&inDirect&&!isSel))&&(
-                      <div style={{position:"absolute",left:`calc(${x}% + ${sz/2+7}px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:"#94a3b8",whiteSpace:"nowrap",pointerEvents:"none",background:"#0a0a0f",padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":"#2d2d4e"}`,zIndex:3}}>
+                      <div style={{position:"absolute",left:`calc(${x}% + ${sz/2+7}px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:theme.textSecondary,whiteSpace:"nowrap",pointerEvents:"none",background:theme.bg,padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":theme.borderMid}`,zIndex:3}}>
                         {m.startDate&&m.startDate!==m.date?`${fmtDate(m.startDate)} – ${fmtDate(m.date)}`:fmtDate(m.date)}
                       </div>
                     )}
@@ -414,11 +468,12 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
         ))}
       </div>
 
-      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"16px",paddingTop:"12px",borderTop:"1px solid #1e1e2e"}}>
+      {/* Legend */}
+      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"16px",paddingTop:"12px",borderTop:`1px solid ${theme.border}`}}>
         {Object.entries(categories).map(([cat,color])=>(
           <div key={cat} style={{display:"flex",alignItems:"center",gap:"5px"}}>
             <div style={{width:"7px",height:"7px",background:color,transform:"rotate(45deg)",flexShrink:0}}/>
-            <span style={{fontSize:"11px",color:"#4b5563"}}>{cat}</span>
+            <span style={{fontSize:"11px",color:theme.textDim}}>{cat}</span>
           </div>
         ))}
       </div>
@@ -431,7 +486,7 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
         const label=line.type==="blockedBy"?`${toM.name} blocked by ${fromM.name}`:`${fromM.name} unlocks ${toM.name}`;
         const col=line.type==="blockedBy"?DEP_RED:DEP_GREEN;
         return(
-          <div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:"#0d0d18",border:`1px solid ${col}66`,borderRadius:"6px",padding:"8px 16px",fontSize:"12px",color:col,zIndex:200,pointerEvents:"none",maxWidth:"80vw",textAlign:"center",boxShadow:`0 0 20px ${col}33`}}>
+          <div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:theme.bgCard,border:`1px solid ${col}66`,borderRadius:"6px",padding:"8px 16px",fontSize:"12px",color:col,zIndex:200,pointerEvents:"none",maxWidth:"80vw",textAlign:"center",boxShadow:`0 0 20px ${col}33`}}>
             {label}
           </div>
         );
@@ -519,10 +574,10 @@ function GanttDepLines({lines,milestones,rowRefs,containerRef,LABEL_W,ROW_H,hove
 
 // ── Gantt Bar View (true Gantt chart) ─────────────────────────────────────────
 function GanttBarView({milestones,allMilestones,categories,chain,directChain,selectedId,hoverId,isMobile,onHover,onTap,onBgClick}){
+  const theme=useTheme();
   const LABEL_W=isMobile?130:220;
   const ROW_H=isMobile?36:34;
   const BAR_H=isMobile?14:16;
-  // Group by start date month (fall back to deadline month)
   const getGroupMonth=(m)=>getMilestoneMonth({...m,date:m.startDate||m.date});
   const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getGroupMonth(m)===month)})).filter(g=>g.items.length>0);
   const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
@@ -553,11 +608,11 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
 
   return(
     <div style={{height:"100%",overflowY:"auto",overflowX:"hidden",padding:isMobile?"12px 16px 80px":"16px 28px 80px",position:"relative"}} onClick={e=>{e.stopPropagation();onBgClick();}}>
-      {/* Month headers */}
-      <div style={{position:"sticky",top:0,background:"#0a0a0f",zIndex:10,paddingBottom:"4px"}}>
-        <div style={{position:"relative",height:"22px",marginLeft:LABEL_W+8}}>
+      {/* Sticky month header row */}
+      <div style={{position:"sticky",top:0,background:theme.bg,zIndex:10,paddingBottom:"6px",borderBottom:`1px solid ${theme.border}`,marginBottom:"6px"}}>
+        <div style={{position:"relative",height:"24px",marginLeft:LABEL_W+8}}>
           {MONTHS.map((month,i)=>(
-            <div key={month} style={{position:"absolute",left:`${monthOffsets[i]}%`,fontSize:isMobile?"10px":"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:"#374151",whiteSpace:"nowrap"}}>
+            <div key={month} style={{position:"absolute",left:`${monthOffsets[i]}%`,fontSize:isMobile?"11px":"12px",letterSpacing:"0.08em",textTransform:"uppercase",color:theme.monthHeader,fontWeight:"700",whiteSpace:"nowrap"}}>
               {month.split(" ")[0]}
             </div>
           ))}
@@ -572,7 +627,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
 
         {monthGroups.map(({month,items})=>(
           <div key={month} style={{marginBottom:isMobile?"14px":"18px"}}>
-            <div style={{fontSize:"10px",letterSpacing:"0.12em",textTransform:"uppercase",color:"#2d3748",marginBottom:"3px",fontWeight:"700",borderLeft:"2px solid #1e1e2e",paddingLeft:"5px"}}>{month}</div>
+            <div style={{fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:theme.monthGroup,marginBottom:"4px",fontWeight:"700",borderLeft:`2px solid ${theme.accent}55`,paddingLeft:"6px"}}>{month}</div>
             {items.map(m=>{
               const inDirect=highlightId?directChain.has(m.id):true;
               const isSel=m.id===selectedId;
@@ -584,22 +639,23 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
               const xEnd=endD?pct(endD):xStart;
               const barW=Math.max(xEnd-xStart,0.4);
               const hasRange=startD&&endD&&startD!==endD;
+              const dimmed=highlightId&&!inDirect;
               return(
                 <div key={m.id}
                   ref={el=>{if(el)rowRefs.current[m.id]=el;}}
                   onClick={e=>{e.stopPropagation();onTap(m.id);}}
-                  style={{display:"flex",alignItems:"center",marginBottom:"3px",cursor:"pointer",opacity:highlightId&&!inDirect?0.08:1,transition:"opacity 0.15s",minHeight:`${ROW_H}px`}}>
+                  style={{display:"flex",alignItems:"center",marginBottom:"3px",cursor:"pointer",opacity:dimmed?theme.dimOpacity:1,transition:"opacity 0.15s",minHeight:`${ROW_H}px`}}>
                   <div
                     onMouseEnter={e=>{e.stopPropagation();onHover(m.id);}}
                     onMouseLeave={e=>{e.stopPropagation();onHover(null);}}
-                    style={{width:LABEL_W,flexShrink:0,fontSize:isMobile?"12px":"13px",color:isSel?color:(inDirect&&highlightId)?"#e2e8f0":"#6b7280",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",paddingRight:"10px",fontWeight:isSel?"700":"400"}}>
+                    style={{width:LABEL_W,flexShrink:0,fontSize:isMobile?"12px":"13px",color:isSel?color:(inDirect&&highlightId)?theme.text:theme.textMuted,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",paddingRight:"10px",fontWeight:isSel?"700":"400"}}>
                     {m.name}
                   </div>
                   <div
                     onMouseEnter={selectedId?e=>{e.stopPropagation();onHover(m.id);}:undefined}
                     onMouseLeave={selectedId?e=>{e.stopPropagation();onHover(null);}:undefined}
                     style={{flex:1,position:"relative",height:`${ROW_H}px`}}>
-                    {MONTHS.map((mo,i)=><div key={mo} style={{position:"absolute",left:`${monthOffsets[i]}%`,top:0,bottom:0,width:"1px",background:"#161625"}}/>)}
+                    {MONTHS.map((mo,i)=><div key={mo} style={{position:"absolute",left:`${monthOffsets[i]}%`,top:0,bottom:0,width:"1px",background:theme.monthLine}}/>)}
                     {/* Horizontal bar from startDate to deadline */}
                     <div style={{
                       position:"absolute",
@@ -618,7 +674,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
                     }}/>
                     {/* Date label on hover/select */}
                     {(isHov||isSel||(selectedId&&inDirect&&!isSel))&&(
-                      <div style={{position:"absolute",left:`calc(${xEnd}% + 8px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:"#94a3b8",whiteSpace:"nowrap",pointerEvents:"none",background:"#0a0a0f",padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":"#2d2d4e"}`,zIndex:3}}>
+                      <div style={{position:"absolute",left:`calc(${xEnd}% + 8px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:theme.textSecondary,whiteSpace:"nowrap",pointerEvents:"none",background:theme.bg,padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":theme.borderMid}`,zIndex:3}}>
                         {hasRange?`${fmtDate(startD)} – ${fmtDate(endD)}`:fmtDate(endD||startD)}
                       </div>
                     )}
@@ -631,11 +687,11 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
       </div>
 
       {/* Legend */}
-      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"16px",paddingTop:"12px",borderTop:"1px solid #1e1e2e"}}>
+      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"16px",paddingTop:"12px",borderTop:`1px solid ${theme.border}`}}>
         {Object.entries(categories).map(([cat,color])=>(
           <div key={cat} style={{display:"flex",alignItems:"center",gap:"5px"}}>
             <div style={{width:"16px",height:"6px",background:color,borderRadius:"2px",flexShrink:0}}/>
-            <span style={{fontSize:"11px",color:"#4b5563"}}>{cat}</span>
+            <span style={{fontSize:"11px",color:theme.textDim}}>{cat}</span>
           </div>
         ))}
       </div>
@@ -648,7 +704,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
         const label=line.type==="blockedBy"?`${toM.name} blocked by ${fromM.name}`:`${fromM.name} unlocks ${toM.name}`;
         const col=line.type==="blockedBy"?DEP_RED:DEP_GREEN;
         return(
-          <div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:"#0d0d18",border:`1px solid ${col}66`,borderRadius:"6px",padding:"8px 16px",fontSize:"12px",color:col,zIndex:200,pointerEvents:"none",maxWidth:"80vw",textAlign:"center",boxShadow:`0 0 20px ${col}33`}}>
+          <div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:theme.bgCard,border:`1px solid ${col}66`,borderRadius:"6px",padding:"8px 16px",fontSize:"12px",color:col,zIndex:200,pointerEvents:"none",maxWidth:"80vw",textAlign:"center",boxShadow:`0 0 20px ${col}33`}}>
             {label}
           </div>
         );
@@ -740,6 +796,7 @@ function GanttBarDepLines({lines,milestones,rowRefs,containerRef,LABEL_W,ROW_H,h
 
 // ── Deps View ──────────────────────────────────────────────────────────────────
 function DepsView({milestones,categories,chain,highlightId,isMobile,onHover,onTap,selectedId,selectedEdge,edgeHighlightSet,onEdgeTap,onBgClick}){
+  const theme=useTheme();
   const [hoveredEdge,setHoveredEdge]=useState(null);
   const [hoveredNode,setHoveredNode]=useState(null);
   const ids=new Set(milestones.map(m=>m.id));
@@ -826,9 +883,15 @@ function DepsView({milestones,categories,chain,highlightId,isMobile,onHover,onTa
   };
 
   const uniqueColors=[...new Set(edges.map(e=>e.color))];
+  const nodeBg=theme===LIGHT_THEME?"#ffffff":"#0a0a0f";
+  const nodeInner=theme===LIGHT_THEME?"#f4f5f9":"#0e0e1a";
+  const nodeText=theme===LIGHT_THEME?"#1a1d2e":"#dde4f0";
+  const nodeDimText=theme===LIGHT_THEME?"#c0c6d4":"#252535";
+  const nodeStroke=theme===LIGHT_THEME?"#c8cdd8":"#2d2d50";
+  const nodeHovStroke=theme===LIGHT_THEME?"#9fa6b8":"#4d4d7a";
 
   return(
-    <div style={{height:"100%",overflow:"auto",WebkitOverflowScrolling:"touch"}} onClick={e=>{e.stopPropagation();onBgClick();}}>
+    <div style={{height:"100%",overflow:"auto",WebkitOverflowScrolling:"touch",background:theme.bg}} onClick={e=>{e.stopPropagation();onBgClick();}}>
       <svg width={totalW} height={totalH} style={{display:"block",touchAction:"pan-x pan-y"}}>
         <defs>
           <filter id="eg" x="-60%" y="-60%" width="220%" height="220%">
@@ -895,20 +958,20 @@ function DepsView({milestones,categories,chain,highlightId,isMobile,onHover,onTa
               onMouseLeave={()=>{onHover(null);setHoveredNode(null);}}
               onClick={ev=>{ev.stopPropagation();onTap(m.id);}}
               style={{cursor:"pointer"}}>
-              <rect width={NODE_W} height={NODE_H} rx={5} fill="#0a0a0f"/>
+              <rect width={NODE_W} height={NODE_H} rx={5} fill={nodeBg}/>
               <rect width={NODE_W} height={NODE_H} rx={5}
-                fill={isSel||isEP?`${color}22`:"#0e0e1a"}
-                stroke={isSel?color:isTo?color:isFrom?color+"99":isHov?"#4d4d7a":"#2d2d50"}
+                fill={isSel||isEP?`${color}22`:nodeInner}
+                stroke={isSel?color:isTo?color:isFrom?color+"99":isHov?nodeHovStroke:nodeStroke}
                 strokeWidth={isSel?2:isEP?2:isHov?1.5:1}
                 filter={isSel||isEP?"url(#ng)":undefined}
                 opacity={shouldDim?0.18:1} style={{transition:"opacity 0.12s"}}/>
               <rect width={3} height={NODE_H} rx={2} fill={color} opacity={shouldDim?0.1:1}/>
-              <text x={12} y={isMobile?19:20} fill={shouldDim?"#252535":"#dde4f0"} fontSize={isMobile?10:11} fontFamily="DM Mono,monospace" fontWeight={isSel||isEP?"700":"400"} opacity={shouldDim?0.18:1}>{tName}</text>
-              <text x={12} y={isMobile?33:36} fill={color} fontSize={isMobile?8.5:9.5} fontFamily="DM Mono,monospace" opacity={shouldDim?0.08:0.7}>{tCat}</text>
+              <text x={12} y={isMobile?19:20} fill={shouldDim?nodeDimText:nodeText} fontSize={isMobile?10:11} fontFamily="inherit" fontWeight={isSel||isEP?"700":"400"} opacity={shouldDim?0.18:1}>{tName}</text>
+              <text x={12} y={isMobile?33:36} fill={color} fontSize={isMobile?8.5:9.5} fontFamily="inherit" opacity={shouldDim?0.08:0.7}>{tCat}</text>
               {(isHov||isSel)&&!shouldDim&&(
                 <g transform={`translate(${NODE_W+7},${NODE_H/2-9})`}>
-                  <rect x={0} y={0} width={56} height={18} rx={3} fill="#0d0d18" stroke={`${color}55`} strokeWidth={1}/>
-                  <text x={28} y={12} fill={color} fontSize={9} fontFamily="DM Mono,monospace" textAnchor="middle">{fmtDate(m.date)}</text>
+                  <rect x={0} y={0} width={56} height={18} rx={3} fill={nodeBg} stroke={`${color}55`} strokeWidth={1}/>
+                  <text x={28} y={12} fill={color} fontSize={9} fontFamily="inherit" textAnchor="middle">{fmtDate(m.date)}</text>
                 </g>
               )}
             </g>);
@@ -921,11 +984,12 @@ function DepsView({milestones,categories,chain,highlightId,isMobile,onHover,onTa
 
 // ── Panel Settings Bar ─────────────────────────────────────────────────────────
 function PanelSettingsBar({settings,onToggle}){
+  const theme=useTheme();
   const fields=[["showDate","Date"],["showPriority","Priority"],["showStatus","Status"],["showOwner","Owner"],["showComplexity","Complexity"],["showNotes","Notes"],["showBlockedBy","Blocked By"],["showUnlocks","Unlocks"]];
   return(
-    <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"14px",paddingBottom:"12px",borderBottom:"1px solid #1e1e2e"}}>
+    <div style={{display:"flex",gap:"5px",flexWrap:"wrap",marginBottom:"14px",paddingBottom:"12px",borderBottom:`1px solid ${theme.border}`}}>
       {fields.map(([key,label])=>(
-        <button key={key} onClick={()=>onToggle(key)} style={{padding:"3px 8px",borderRadius:"3px",border:`1px solid ${settings[key]?"#3b3b6b":"#1e1e2e"}`,background:settings[key]?"#3b3b6b22":"transparent",color:settings[key]?"#a78bfa":"#4b5563",fontSize:"11px",cursor:"pointer",fontFamily:"inherit"}}>
+        <button key={key} onClick={()=>onToggle(key)} style={{padding:"3px 8px",borderRadius:"3px",border:`1px solid ${settings[key]?theme.borderStrong:theme.border}`,background:settings[key]?`${theme.accentBg}`:"transparent",color:settings[key]?theme.accent:theme.textDim,fontSize:"11px",cursor:"pointer",fontFamily:"inherit"}}>
           {label}
         </button>
       ))}
@@ -935,6 +999,7 @@ function PanelSettingsBar({settings,onToggle}){
 
 // ── Detail Content ─────────────────────────────────────────────────────────────
 function Detail({milestone,allMilestones,categories,settings,onToggleSetting,onClose,onNavigate}){
+  const theme=useTheme();
   const color=categories[milestone.category]||FB;
   const priColor=PRIORITIES[milestone.priority]||FB;
   const statColor=STATUSES[milestone.status]||"#4b5563";
@@ -943,16 +1008,16 @@ function Detail({milestone,allMilestones,categories,settings,onToggleSetting,onC
   const ready=isReady(milestone,allMilestones);
 
   const Chip=({label,col})=>(
-    <span style={{display:"inline-block",padding:"3px 9px",borderRadius:"4px",background:`${col}33`,border:`1px solid ${col}77`,fontSize:"11px",color:"#f1f5f9",marginRight:"5px",marginBottom:"5px",fontWeight:"500"}}>{label}</span>
+    <span style={{display:"inline-block",padding:"3px 9px",borderRadius:"4px",background:`${col}22`,border:`1px solid ${col}66`,fontSize:"11px",color:col,marginRight:"5px",marginBottom:"5px",fontWeight:"600"}}>{label}</span>
   );
 
   return(
     <>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
         <div style={{fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",color,fontWeight:"700"}}>{milestone.category}</div>
-        <button onClick={onClose} style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:"20px",padding:"0",lineHeight:1}}>✕</button>
+        <button onClick={onClose} style={{background:"none",border:"none",color:theme.textMuted,cursor:"pointer",fontSize:"20px",padding:"0",lineHeight:1}}>✕</button>
       </div>
-      <div style={{fontSize:"16px",fontWeight:"700",color:"#f1f5f9",marginBottom:"5px",lineHeight:"1.4"}}>{milestone.name}</div>
+      <div style={{fontSize:"16px",fontWeight:"700",color:theme.textStrong,marginBottom:"5px",lineHeight:"1.4"}}>{milestone.name}</div>
       {ready&&<div style={{fontSize:"11px",color:"#10b981",marginBottom:"10px"}}>✓ Ready to work on</div>}
 
       <PanelSettingsBar settings={settings} onToggle={onToggleSetting}/>
@@ -961,18 +1026,18 @@ function Detail({milestone,allMilestones,categories,settings,onToggleSetting,onC
         {settings.showDate&&milestone.date&&<Chip label={milestone.startDate&&milestone.startDate!==milestone.date?`${fmtDate(milestone.startDate)} – ${fmtDateLong(milestone.date)}`:fmtDateLong(milestone.date)} col="#6b7280"/>}
         {settings.showPriority&&milestone.priority&&<Chip label={milestone.priority} col={priColor}/>}
         {settings.showStatus&&milestone.status&&<Chip label={milestone.status} col={statColor}/>}
-        {settings.showComplexity&&milestone.effort!=null&&<Chip label={`Complexity: ${milestone.effort}`} col="#4b5563"/>}
+        {settings.showComplexity&&milestone.effort!=null&&<Chip label={`Complexity: ${milestone.effort}`} col="#6b7280"/>}
         {settings.showOwner&&milestone.owner&&<Chip label={milestone.owner} col="#6b7280"/>}
       </div>
 
       {milestone.description&&(
-        <div style={{fontSize:"13px",color:"#94a3b8",lineHeight:"1.8",marginBottom:"14px"}}>{milestone.description}</div>
+        <div style={{fontSize:"13px",color:theme.textSecondary,lineHeight:"1.8",marginBottom:"14px"}}>{milestone.description}</div>
       )}
 
       {settings.showNotes&&milestone.notes&&(
         <div style={{marginBottom:"14px"}}>
-          <div style={{fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:"#6b7280",marginBottom:"6px"}}>Notes</div>
-          <div style={{fontSize:"13px",color:"#cbd5e1",lineHeight:"1.8",background:"#1a1a2e",borderRadius:"6px",padding:"10px 12px",borderLeft:"2px solid #a78bfa",whiteSpace:"pre-wrap"}}>{milestone.notes}</div>
+          <div style={{fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:theme.textMuted,marginBottom:"6px"}}>Notes</div>
+          <div style={{fontSize:"13px",color:theme.textBody,lineHeight:"1.8",background:theme.notesBg,borderRadius:"6px",padding:"10px 12px",borderLeft:`2px solid ${theme.notesBar}`,whiteSpace:"pre-wrap"}}>{milestone.notes}</div>
         </div>
       )}
 
@@ -980,9 +1045,9 @@ function Detail({milestone,allMilestones,categories,settings,onToggleSetting,onC
         <div style={{marginBottom:"14px"}}>
           <div style={{fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:DEP_RED,marginBottom:"6px"}}>Blocked By</div>
           {blockedByMs.map(dep=>(
-            <div key={dep.id} onClick={()=>onNavigate(dep.id)} style={{padding:"8px 11px",marginBottom:"4px",background:"#1a0e0e",borderRadius:"6px",fontSize:"13px",color:DEP_RED,cursor:"pointer",borderLeft:`2px solid ${DEP_RED}66`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div key={dep.id} onClick={()=>onNavigate(dep.id)} style={{padding:"8px 11px",marginBottom:"4px",background:`${DEP_RED}11`,borderRadius:"6px",fontSize:"13px",color:DEP_RED,cursor:"pointer",borderLeft:`2px solid ${DEP_RED}66`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span>{dep.name}</span>
-              <span style={{fontSize:"11px",color:STATUSES[dep.status]||"#4b5563",flexShrink:0,marginLeft:"8px"}}>{dep.status}</span>
+              <span style={{fontSize:"11px",color:STATUSES[dep.status]||theme.textDim,flexShrink:0,marginLeft:"8px"}}>{dep.status}</span>
             </div>
           ))}
         </div>
@@ -992,9 +1057,9 @@ function Detail({milestone,allMilestones,categories,settings,onToggleSetting,onC
         <div>
           <div style={{fontSize:"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:DEP_GREEN,marginBottom:"6px"}}>Unlocks</div>
           {unlocks.map(m=>(
-            <div key={m.id} onClick={()=>onNavigate(m.id)} style={{padding:"8px 11px",marginBottom:"4px",background:"#0e1a0e",borderRadius:"6px",fontSize:"13px",color:DEP_GREEN,cursor:"pointer",borderLeft:`2px solid ${DEP_GREEN}66`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div key={m.id} onClick={()=>onNavigate(m.id)} style={{padding:"8px 11px",marginBottom:"4px",background:`${DEP_GREEN}11`,borderRadius:"6px",fontSize:"13px",color:DEP_GREEN,cursor:"pointer",borderLeft:`2px solid ${DEP_GREEN}66`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span>{m.name}</span>
-              <span style={{fontSize:"11px",color:STATUSES[m.status]||"#4b5563",flexShrink:0,marginLeft:"8px"}}>{m.status}</span>
+              <span style={{fontSize:"11px",color:STATUSES[m.status]||theme.textDim,flexShrink:0,marginLeft:"8px"}}>{m.status}</span>
             </div>
           ))}
         </div>
@@ -1005,8 +1070,9 @@ function Detail({milestone,allMilestones,categories,settings,onToggleSetting,onC
 
 // ── Side Panel ─────────────────────────────────────────────────────────────────
 function SidePanel({milestone,allMilestones,categories,settings,onToggleSetting,onClose,onNavigate}){
+  const theme=useTheme();
   return(
-    <div style={{position:"fixed",top:0,right:0,bottom:0,width:"340px",borderLeft:"1px solid #1e1e2e",padding:"20px",background:"#0d0d18",overflowY:"auto",zIndex:100}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",top:0,right:0,bottom:0,width:"340px",borderLeft:`1px solid ${theme.border}`,padding:"20px",background:theme.bgCard,overflowY:"auto",zIndex:100}} onClick={e=>e.stopPropagation()}>
       <Detail milestone={milestone} allMilestones={allMilestones} categories={categories} settings={settings} onToggleSetting={onToggleSetting} onClose={onClose} onNavigate={onNavigate}/>
     </div>
   );
@@ -1014,11 +1080,12 @@ function SidePanel({milestone,allMilestones,categories,settings,onToggleSetting,
 
 // ── Bottom Sheet ───────────────────────────────────────────────────────────────
 function BottomSheet({milestone,allMilestones,categories,settings,onToggleSetting,onClose,onNavigate}){
+  const theme=useTheme();
   return(
     <>
       <div onClick={onClose} style={{position:"fixed",inset:0,background:"#00000088",zIndex:90}}/>
-      <div style={{position:"fixed",left:0,right:0,bottom:0,background:"#0d0d18",borderTop:"1px solid #2d2d4e",borderRadius:"16px 16px 0 0",padding:"16px 20px 44px",zIndex:100,maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-        <div style={{width:"40px",height:"4px",background:"#2d2d4e",borderRadius:"2px",margin:"0 auto 16px"}}/>
+      <div style={{position:"fixed",left:0,right:0,bottom:0,background:theme.bgCard,borderTop:`1px solid ${theme.borderMid}`,borderRadius:"16px 16px 0 0",padding:"16px 20px 44px",zIndex:100,maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:"40px",height:"4px",background:theme.borderMid,borderRadius:"2px",margin:"0 auto 16px"}}/>
         <Detail milestone={milestone} allMilestones={allMilestones} categories={categories} settings={settings} onToggleSetting={onToggleSetting} onClose={onClose} onNavigate={onNavigate}/>
       </div>
     </>
