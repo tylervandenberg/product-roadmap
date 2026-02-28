@@ -232,7 +232,7 @@ function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
   }),[phases,milestones]);
 
   return(
-    <div style={{height:"100%",overflowY:"auto",padding:isMobile?"14px 16px":"20px 28px"}} onClick={e=>e.stopPropagation()}>
+    <div style={{height:"100%",overflowY:"auto",padding:isMobile?"14px 16px 80px":"20px 28px 80px"}} onClick={e=>e.stopPropagation()}>
       <div style={{marginBottom:"26px"}}>
         <div style={{fontSize:"12px",letterSpacing:"0.15em",textTransform:"uppercase",color:"#6b7280",marginBottom:"12px",fontWeight:"700"}}>Ready to Work On</div>
         {readyTasks.length===0
@@ -322,10 +322,16 @@ function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
 }
 
 // ── Gantt View ─────────────────────────────────────────────────────────────────
+function getMonthLabel(dateStr){
+  if(!dateStr)return null;
+  const d=new Date(dateStr+"T12:00:00");
+  return d.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+}
+
 function GanttView({milestones,allMilestones,categories,chain,directChain,selectedId,hoverId,isMobile,onHover,onTap,onBgClick}){
   const LABEL_W=isMobile?130:220;
   const ROW_H=isMobile?32:28;
-  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>m.month===month)})).filter(g=>g.items.length>0);
+  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMonthLabel(m.date)===month)})).filter(g=>g.items.length>0);
   const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
   const highlightId=selectedId||hoverId;
   const containerRef=useRef(null);
@@ -525,7 +531,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
   const LABEL_W=isMobile?130:220;
   const ROW_H=isMobile?36:32;
   const BAR_H=isMobile?14:16;
-  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>m.month===month)})).filter(g=>g.items.length>0);
+  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMonthLabel(m.date)===month)})).filter(g=>g.items.length>0);
   const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
   const highlightId=selectedId||hoverId;
   const containerRef=useRef(null);
