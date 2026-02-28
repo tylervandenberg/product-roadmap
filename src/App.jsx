@@ -12,7 +12,7 @@ const SETTINGS_KEY = "roadmap_panel_filters_v2";
 const DEP_RED   = "#ef4444";
 const DEP_GREEN = "#22c55e";
 
-const LAUNCH_READINESS_COLOR = "#f59e0b"; // override gray for Launch Readiness
+const LAUNCH_READINESS_COLOR = "#f59e0b";
 
 function getCategoryColor(cat, categories){
   const c = categories[cat];
@@ -99,12 +99,10 @@ export default function GanttApp(){
     setLoading(true);setLoadError(null);
     try{
       const {milestones:ms,phases:ps,categories:cats}=await loadFromNotion();
-      // Override Launch Readiness if it's gray or missing
       if(cats["Launch Readiness"]&&(cats["Launch Readiness"]==="#6b7280"||cats["Launch Readiness"]===FB)){
         cats["Launch Readiness"]="#f59e0b";
       }
       if(!cats["Launch Readiness"])cats["Launch Readiness"]="#f59e0b";
-      // Also fix any phases
       ps.forEach(p=>{if(p.name==="Launch Readiness"&&(p.color==="#6b7280"||p.color===FB||!p.color))p.color="#f59e0b";});
       setMilestones(ms);setPhases(ps);setCategories(cats);
     }catch(e){setLoadError(e.message);}
@@ -127,7 +125,6 @@ export default function GanttApp(){
   }),[milestones,search,filterPhase]);
 
   const chain=useMemo(()=>buildChain(selectedId||hoverId,milestones),[selectedId,hoverId,milestones]);
-  // Direct connections only (for timeline highlight - no transitive)
   const directChain=useMemo(()=>{
     const id=selectedId||hoverId;
     if(!id)return new Set();
@@ -208,7 +205,7 @@ export default function GanttApp(){
         {view==="deps"&&<DepsView milestones={filtered} categories={categories} chain={chain} highlightId={selectedId||effectiveHover} isMobile={isMobile} onHover={id=>{if(!selectedId)setHoverId(id);}} onTap={handleTap} selectedId={selectedId} selectedEdge={selectedEdge} edgeHighlightSet={edgeHighlightSet} onEdgeTap={handleEdgeTap} onBgClick={handleBgClick}/>}
       </div>
 
-      {/* Detail panel — separate from selection state */}
+      {/* Detail panel */}
       {showPanel&&(
         isMobile
           ?<BottomSheet milestone={selectedMilestone} allMilestones={milestones} categories={categories} settings={panelSettings} onToggleSetting={togglePanelSetting} onClose={handleClosePanel} onNavigate={handleTap}/>
@@ -322,7 +319,7 @@ function DashboardView({milestones,phases,categories,onSelectTask,isMobile}){
   );
 }
 
-// ── Gantt View ─────────────────────────────────────────────────────────────────
+// ── Gantt (Timeline) View ──────────────────────────────────────────────────────
 function getMonthLabel(dateStr){
   if(!dateStr)return null;
   const d=new Date(dateStr+"T12:00:00");
@@ -362,7 +359,6 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
 
   return(
     <div style={{height:"100%",overflowY:"auto",overflowX:"hidden",padding:isMobile?"12px 16px 80px":"16px 28px 80px",position:"relative"}} onClick={e=>{e.stopPropagation();onBgClick();}}>
-      {/* Month headers */}
       <div style={{position:"sticky",top:0,background:"#0a0a0f",zIndex:10,paddingBottom:"4px"}}>
         <div style={{position:"relative",height:"22px",marginLeft:LABEL_W+8}}>
           {MONTHS.map((month,i)=>(
@@ -373,7 +369,6 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
         </div>
       </div>
 
-      {/* Chart area */}
       <div ref={containerRef} style={{position:"relative"}}>
         {depLines.length>0&&(
           <GanttDepLines lines={depLines} milestones={milestones} rowRefs={rowRefs} containerRef={containerRef} LABEL_W={LABEL_W} ROW_H={ROW_H} hoveredLine={hoveredLine} setHoveredLine={setHoveredLine} selectedLine={selectedLine} setSelectedLine={setSelectedLine}/>
@@ -383,7 +378,6 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
           <div key={month} style={{marginBottom:isMobile?"14px":"18px"}}>
             <div style={{fontSize:"10px",letterSpacing:"0.12em",textTransform:"uppercase",color:"#2d3748",marginBottom:"3px",fontWeight:"700",borderLeft:"2px solid #1e1e2e",paddingLeft:"5px"}}>{month}</div>
             {items.map(m=>{
-              const inChain=highlightId?chain.has(m.id):true;
               const inDirect=highlightId?directChain.has(m.id):true;
               const isSel=m.id===selectedId;
               const isHov=m.id===hoverId;
@@ -420,7 +414,6 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
         ))}
       </div>
 
-      {/* Legend */}
       <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"16px",paddingTop:"12px",borderTop:"1px solid #1e1e2e"}}>
         {Object.entries(categories).map(([cat,color])=>(
           <div key={cat} style={{display:"flex",alignItems:"center",gap:"5px"}}>
@@ -430,7 +423,6 @@ function GanttView({milestones,allMilestones,categories,chain,directChain,select
         ))}
       </div>
 
-      {/* Line label tooltip */}
       {(hoveredLine||selectedLine)&&(()=>{
         const line=selectedLine||hoveredLine;
         const fromM=milestones.find(x=>x.id===line.fromId);
@@ -506,16 +498,13 @@ function GanttDepLines({lines,milestones,rowRefs,containerRef,LABEL_W,ROW_H,hove
         const isHov=hoveredLine?.fromId===line.fromId&&hoveredLine?.toId===line.toId;
         const isSel=selectedLine?.fromId===line.fromId&&selectedLine?.toId===line.toId;
         const active=isHov||isSel;
-        // Red (blockedBy): go vertical first then horizontal; Green (unlocks): go horizontal first then vertical
         const d=line.type==="blockedBy"?`M${x1},${y1} V${y2} H${x2}`:`M${x1},${y1} H${x2} V${y2}`;
         return(
           <g key={i}>
-            {/* Wide invisible hit area */}
             <path d={d} fill="none" stroke="transparent" strokeWidth={18} style={{pointerEvents:"stroke",cursor:"pointer"}}
               onMouseEnter={e=>{e.stopPropagation();setHoveredLine(line);}}
               onMouseLeave={()=>setHoveredLine(null)}
               onClick={e=>{e.stopPropagation();setSelectedLine(prev=>prev?.fromId===line.fromId&&prev?.toId===line.toId?null:line);}}/>
-            {/* Visible line */}
             <path d={d} fill="none" stroke={col}
               strokeWidth={active?3:1.5}
               opacity={active?1:0.65}
@@ -528,7 +517,7 @@ function GanttDepLines({lines,milestones,rowRefs,containerRef,LABEL_W,ROW_H,hove
   );
 }
 
-// ── Gantt Bar View ─────────────────────────────────────────────────────────────
+// ── Gantt Bar View (true Gantt chart) ─────────────────────────────────────────
 function GanttBarView({milestones,allMilestones,categories,chain,directChain,selectedId,hoverId,isMobile,onHover,onTap,onBgClick}){
   const LABEL_W=isMobile?130:220;
   const ROW_H=isMobile?36:34;
@@ -590,7 +579,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
               const isHov=m.id===hoverId;
               const color=categories[m.category]||FB;
               const startD=m.startDate||m.date;
-              const endD=m.date; // deadline
+              const endD=m.date;
               const xStart=pct(startD);
               const xEnd=endD?pct(endD):xStart;
               const barW=Math.max(xEnd-xStart,0.4);
@@ -611,7 +600,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
                     onMouseLeave={selectedId?e=>{e.stopPropagation();onHover(null);}:undefined}
                     style={{flex:1,position:"relative",height:`${ROW_H}px`}}>
                     {MONTHS.map((mo,i)=><div key={mo} style={{position:"absolute",left:`${monthOffsets[i]}%`,top:0,bottom:0,width:"1px",background:"#161625"}}/>)}
-                    {/* Bar */}
+                    {/* Horizontal bar from startDate to deadline */}
                     <div style={{
                       position:"absolute",
                       left:`${xStart}%`,
@@ -627,7 +616,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
                       minWidth:"6px",
                       border:`1px solid ${color}`,
                     }}/>
-                    {/* Date label */}
+                    {/* Date label on hover/select */}
                     {(isHov||isSel||(selectedId&&inDirect&&!isSel))&&(
                       <div style={{position:"absolute",left:`calc(${xEnd}% + 8px)`,top:"50%",transform:"translateY(-50%)",fontSize:"11px",color:(isHov||isSel)?color:"#94a3b8",whiteSpace:"nowrap",pointerEvents:"none",background:"#0a0a0f",padding:"2px 6px",borderRadius:"3px",border:`1px solid ${(isHov||isSel)?color+"44":"#2d2d4e"}`,zIndex:3}}>
                         {hasRange?`${fmtDate(startD)} – ${fmtDate(endD)}`:fmtDate(endD||startD)}
@@ -651,81 +640,6 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
         ))}
       </div>
 
-      {/* Line label tooltip */}
-      {(hoveredLine||selectedLine)&&(()=>{
-        const line=selectedLine||hoveredLine;
-        const fromM=milestones.find(x=>x.id===line.fromId);
-        const toM=milestones.find(x=>x.id===line.toId);
-        if(!fromM||!toM)return null;
-        const label=line.type==="blockedBy"?`${toM.name} blocked by ${fromM.name}`:`${fromM.name} unlocks ${toM.name}`;
-        const col=line.type==="blockedBy"?DEP_RED:DEP_GREEN;
-        return(
-          <div style={{position:"fixed",bottom:"24px",left:"50%",transform:"translateX(-50%)",background:"#0d0d18",border:`1px solid ${col}66`,borderRadius:"6px",padding:"8px 16px",fontSize:"12px",color:col,zIndex:200,pointerEvents:"none",maxWidth:"80vw",textAlign:"center",boxShadow:`0 0 20px ${col}33`}}>
-            {label}
-          </div>
-        );
-      })()}
-    </div>
-  );
-}
-  const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
-  const highlightId=selectedId||hoverId;
-  const containerRef=useRef(null);
-  const rowRefs=useRef({});
-
-  const activeId=highlightId;
-  const depLines=useMemo(()=>{
-    if(!activeId)return[];
-    const m=milestones.find(x=>x.id===activeId);
-    if(!m)return[];
-    const filteredIds=new Set(milestones.map(x=>x.id));
-    const lines=[];
-    (m.blockedBy||[]).forEach(depId=>{
-      if(filteredIds.has(depId))lines.push({fromId:depId,toId:activeId,type:"blockedBy"});
-    });
-    milestones.forEach(x=>{
-      if((x.blockedBy||[]).includes(activeId)&&filteredIds.has(x.id))
-        lines.push({fromId:activeId,toId:x.id,type:"unlocks"});
-    });
-    return lines;
-  },[activeId,milestones]);
-
-  const [hoveredLine,setHoveredLine]=useState(null);
-  const [selectedLine,setSelectedLine]=useState(null);
-  useEffect(()=>{setSelectedLine(null);},[activeId]);
-
-  return(
-    <div style={{height:"100%",overflowY:"auto",overflowX:"hidden",padding:isMobile?"12px 16px 80px":"16px 28px 80px",position:"relative"}} onClick={e=>{e.stopPropagation();onBgClick();}}>
-      {/* Month headers */}
-      <div style={{position:"sticky",top:0,background:"#0a0a0f",zIndex:10,paddingBottom:"4px"}}>
-        <div style={{position:"relative",height:"22px",marginLeft:LABEL_W+8}}>
-          {MONTHS.map((month,i)=>(
-            <div key={month} style={{position:"absolute",left:`${monthOffsets[i]}%`,fontSize:isMobile?"10px":"11px",letterSpacing:"0.1em",textTransform:"uppercase",color:"#374151",whiteSpace:"nowrap"}}>
-              {month.split(" ")[0]}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Chart area */}
-      <div ref={containerRef} style={{position:"relative"}}>
-        {depLines.length>0&&(
-          <GanttBarDepLines lines={depLines} milestones={milestones} rowRefs={rowRefs} containerRef={containerRef} LABEL_W={LABEL_W} ROW_H={ROW_H} hoveredLine={hoveredLine} setHoveredLine={setHoveredLine} selectedLine={selectedLine} setSelectedLine={setSelectedLine}/>
-        )}
-
-      </div>
-
-      {/* Legend */}
-      <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginTop:"16px",paddingTop:"12px",borderTop:"1px solid #1e1e2e"}}>
-        {Object.entries(categories).map(([cat,color])=>(
-          <div key={cat} style={{display:"flex",alignItems:"center",gap:"5px"}}>
-            <div style={{width:"14px",height:"6px",background:color,borderRadius:"2px",flexShrink:0}}/>
-            <span style={{fontSize:"11px",color:"#4b5563"}}>{cat}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Line label tooltip */}
       {(hoveredLine||selectedLine)&&(()=>{
         const line=selectedLine||hoveredLine;
         const fromM=milestones.find(x=>x.id===line.fromId);
@@ -768,10 +682,9 @@ function GanttBarDepLines({lines,milestones,rowRefs,containerRef,LABEL_W,ROW_H,h
   const W=containerRef.current.offsetWidth||800;
   const H=Math.max(containerRef.current.scrollHeight,containerRef.current.offsetHeight,600);
 
-  // Get the horizontal center of a bar in pixels
   const getBarCenterPx=(m)=>{
     const startD=m.startDate||m.date;
-    const endD=m.deadline||m.date;
+    const endD=m.date;
     const xStart=pct(startD);
     const xEnd=pct(endD);
     const xMid=(xStart+xEnd)/2;
@@ -806,10 +719,7 @@ function GanttBarDepLines({lines,milestones,rowRefs,containerRef,LABEL_W,ROW_H,h
         const isHov=hoveredLine?.fromId===line.fromId&&hoveredLine?.toId===line.toId;
         const isSel=selectedLine?.fromId===line.fromId&&selectedLine?.toId===line.toId;
         const active=isHov||isSel;
-        // Both exit from center of bar vertically then go horizontal
-        const d=line.type==="blockedBy"
-          ?`M${x1},${y1} V${y2} H${x2}`
-          :`M${x1},${y1} H${x2} V${y2}`;
+        const d=line.type==="blockedBy"?`M${x1},${y1} V${y2} H${x2}`:`M${x1},${y1} H${x2} V${y2}`;
         return(
           <g key={i}>
             <path d={d} fill="none" stroke="transparent" strokeWidth={18} style={{pointerEvents:"stroke",cursor:"pointer"}}
