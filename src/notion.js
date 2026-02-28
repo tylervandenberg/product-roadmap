@@ -54,7 +54,6 @@ function transformTask(page, phaseMap) {
   const month = rawDate
     ? new Date(rawDate+"T12:00:00").toLocaleString("en-US",{month:"long",year:"numeric"})
     : "";
-  // Try "Notes (TickTick)" first, fall back to "Notes"
   const notes = getText(p["Notes (TickTick)"])||getText(p["Notes"])||"";
   return {
     id:        page.id,
