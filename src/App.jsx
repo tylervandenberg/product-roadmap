@@ -19,6 +19,7 @@ function getCategoryColor(cat, categories){
   if(cat === "Launch Readiness" && (!c || c === "#6b7280" || c === FB)) return LAUNCH_READINESS_COLOR;
   return c || FB;
 }
+function pct(d){return((new Date(d)-PROJECT_START)/(PROJECT_END-PROJECT_START))*100;}
 function fmtDate(d){if(!d)return"";return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});}
 function fmtDateLong(d){if(!d)return"No date";return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});}
 
@@ -327,11 +328,12 @@ function getMonthLabel(dateStr){
   const d=new Date(dateStr+"T12:00:00");
   return d.toLocaleDateString("en-US",{month:"long",year:"numeric"});
 }
+function getMilestoneMonth(m){return m.month||getMonthLabel(m.date)||"";}
 
 function GanttView({milestones,allMilestones,categories,chain,directChain,selectedId,hoverId,isMobile,onHover,onTap,onBgClick}){
   const LABEL_W=isMobile?130:220;
   const ROW_H=isMobile?32:28;
-  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMonthLabel(m.date)===month)})).filter(g=>g.items.length>0);
+  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMilestoneMonth(m)===month)})).filter(g=>g.items.length>0);
   const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
   const highlightId=selectedId||hoverId;
   const containerRef=useRef(null);
@@ -531,7 +533,7 @@ function GanttBarView({milestones,allMilestones,categories,chain,directChain,sel
   const LABEL_W=isMobile?130:220;
   const ROW_H=isMobile?36:32;
   const BAR_H=isMobile?14:16;
-  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMonthLabel(m.date)===month)})).filter(g=>g.items.length>0);
+  const monthGroups=MONTHS.map(month=>({month,items:milestones.filter(m=>getMilestoneMonth(m)===month)})).filter(g=>g.items.length>0);
   const monthOffsets=MONTHS.map(m=>((MONTH_STARTS[m]-PROJECT_START)/(PROJECT_END-PROJECT_START))*100);
   const highlightId=selectedId||hoverId;
   const containerRef=useRef(null);
