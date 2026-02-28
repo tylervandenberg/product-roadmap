@@ -50,6 +50,7 @@ function transformTask(page, phaseMap) {
   const linkedPhaseIds = getRelationIds(p["Linked Phase"]);
   const phaseName = linkedPhaseIds.length>0 ? (phaseMap[linkedPhaseIds[0]]||"") : "";
   const rawDate = getDate(p["Deadline"]);
+  const rawStartDate = getDate(p["Start Date"]);
   const month = rawDate
     ? new Date(rawDate+"T12:00:00").toLocaleString("en-US",{month:"long",year:"numeric"})
     : "";
@@ -60,6 +61,7 @@ function transformTask(page, phaseMap) {
     notionId:  page.id,
     name:      getTitle(p["Task Name"]),
     date:      rawDate,
+    startDate: rawStartDate,
     month,
     category:  phaseName,
     description: "",
